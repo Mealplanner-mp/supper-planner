@@ -1216,6 +1216,16 @@ function SettingsTab({ settings, setSettings }) {
               />
               Always add a baby-friendly recipe, regardless of the rest of the meal
             </label>
+            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
+              <input
+                type="radio"
+                name="babyFriendlyMode"
+                className="mt-0.5"
+                checked={settings.babyFriendly.mode === "separate"}
+                onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "separate" } })}
+              />
+              Keep baby-friendly recipes separate — they're never used for the regular meal, only added as the additional baby-friendly dish
+            </label>
             <div className="text-xs italic mt-1" style={{ color: C.inkSoft }}>
               Tag recipes as baby-friendly from the recipe card or editor, or manage the whole list from the Recipes tab.
             </div>
@@ -1318,6 +1328,11 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     return true;
   };
 
+  // in "separate" mode, baby-friendly recipes are reserved for the dedicated baby slot only —
+  // they're never eligible to fill a regular meal component or the freezer meal-of-the-day
+  const babyReservedOnly = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "separate";
+  const excludedForRegularMeal = (recipe) => babyReservedOnly && recipe.babyFriendly;
+
   // pre-place locked recipes
   const lockedAssignments = {};
   recipes.forEach((r) => {
@@ -1337,7 +1352,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     // 1. Freezer prep day — mode (part of meal vs. separate task) is set per recipe
     if (dayName === settings.freezer.day) {
       const frequencyWeeks = REPEAT_WEEKS[settings.freezer.frequency] || 2;
-      const dueFreezerCandidates = recipes.filter((r) => r.freezer && !excludeCategories.includes(r.category) && weeksSince((newHistory[r.id] || []).slice(-1)[0]) >= frequencyWeeks && !usedThisWeek.has(r.id));
+      const dueFreezerCandidates = recipes.filter((r) => r.freezer && !excludeCategories.includes(r.category) && !excludedForRegularMeal(r) && weeksSince((newHistory[r.id] || []).slice(-1)[0]) >= frequencyWeeks && !usedThisWeek.has(r.id));
       const dueFreezer = pickRandom(dueFreezerCandidates);
       if (dueFreezer) {
         newStock[dueFreezer.id] = { remaining: dueFreezer.freezerServings, servings: dueFreezer.freezerServings };
@@ -1397,6 +1412,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
         if (usedThisWeek.has(r.id)) return false;
         if (r.usesLeftoverFrom) return false; // only placed via follow-up logic
         if (excludeCategories.includes(r.category)) return false;
+        if (excludedForRegularMeal(r)) return false;
         const providesComponent = r.type === component || (r.type === "combo" && r.comboTypes.includes(component));
         if (!providesComponent) return false;
         if (r.type === "combo") {
@@ -1475,7 +1491,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     // 5. Baby-friendly addition — either fill a gap or always tack one on, per settings
     if (settings.babyFriendly?.enabled) {
       const alreadyBabyFriendly = daySlots.some((s) => recipes.find((r) => r.id === s.recipeId)?.babyFriendly);
-      const shouldAddBaby = settings.babyFriendly.mode === "always" || !alreadyBabyFriendly;
+      const shouldAddBaby = babyReservedOnly || settings.babyFriendly.mode === "always" || !alreadyBabyFriendly;
       if (shouldAddBaby) {
         const babyCandidates = recipes.filter((r) => {
           if (!r.babyFriendly) return false;
