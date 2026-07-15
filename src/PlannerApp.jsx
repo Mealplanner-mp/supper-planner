@@ -6,6 +6,7 @@ import {
   GripVertical, Clock, Copy, Printer, LogOut, Baby
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import Logo, { BRAND } from "./Logo.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens (see inline <style> below for fonts + card texture)      */
@@ -2018,9 +2019,12 @@ export default function PlannerApp({ session }) {
 
       <div className="px-3 sm:px-6 pt-4 sm:pt-6 pb-0 max-w-7xl mx-auto no-print">
         <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <BookOpen size={22} color={C.forest} />
-            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 24, color: C.ink }}>Supper Planner</h1>
+          <div className="flex items-center gap-2.5">
+            <Logo size={38} />
+            <div className="flex flex-col leading-tight">
+              <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 17, color: C.ink }}>Stress Less. Enjoy More.</h1>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: BRAND.sage }}>Your All-in-One Supper Planner.</span>
+            </div>
             <SavePulse show={showSaved} />
           </div>
           <button

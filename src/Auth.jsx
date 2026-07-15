@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { BookOpen } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import Logo, { BRAND } from "./Logo.jsx";
 
 const C = {
   paper: "#F6F7F4",
@@ -33,26 +33,29 @@ export default function Auth() {
       style={{ background: C.paper, fontFamily: "'Inter', sans-serif" }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
         .auth-input:focus { border-color: ${C.forest} !important; box-shadow: 0 0 0 3px rgba(63,91,69,0.16); outline: none; }
       `}</style>
       <div
         className="w-full max-w-sm rounded-2xl p-6"
         style={{ background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 1px 2px rgba(46,42,34,0.05)" }}
       >
-        <div className="flex items-center gap-2 justify-center mb-1">
-          <BookOpen size={22} color={C.forest} />
-          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 22, color: C.ink }}>
-            Supper Planner
+        <div className="flex flex-col items-center text-center mb-6">
+          <Logo size={56} />
+          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 24, color: C.ink, marginTop: 12 }}>
+            Stress Less. Enjoy More.
           </h1>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: BRAND.sage, marginTop: 2 }}>
+            Your All-in-One Supper Planner.
+          </p>
+          <p className="text-xs mt-3" style={{ color: C.inkSoft }}>Sign in to your account</p>
         </div>
-        <p className="text-center text-sm mb-6" style={{ color: C.inkSoft }}>Sign in to your account</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label
               className="block text-xs font-semibold uppercase mb-1"
-              style={{ fontFamily: "'JetBrains Mono', monospace", color: C.forest, letterSpacing: "0.08em" }}
+              style={{ fontFamily: "'Inter', sans-serif", color: C.forest, letterSpacing: "0.08em" }}
             >
               Email
             </label>
@@ -69,7 +72,7 @@ export default function Auth() {
           <div>
             <label
               className="block text-xs font-semibold uppercase mb-1"
-              style={{ fontFamily: "'JetBrains Mono', monospace", color: C.forest, letterSpacing: "0.08em" }}
+              style={{ fontFamily: "'Inter', sans-serif", color: C.forest, letterSpacing: "0.08em" }}
             >
               Password
             </label>
