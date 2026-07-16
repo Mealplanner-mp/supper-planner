@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import Auth from "./Auth.jsx";
 import PlannerApp from "./PlannerApp.jsx";
+import Paywall from "./Paywall.jsx";
+
+const TRIAL_DAYS = 7;
 
 async function ensureUserProvisioned(user) {
   const username = (user.email || user.id).split("@")[0];
@@ -25,9 +28,21 @@ function LoadingScreen({ label }) {
   );
 }
 
+async function checkTrialExpired(userId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("created_at, is_paid")
+    .eq("id", userId)
+    .single();
+  if (error || !data || data.is_paid) return false;
+  const daysSince = (Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24);
+  return daysSince >= TRIAL_DAYS;
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
   const [provisioned, setProvisioned] = useState(false);
+  const [trialExpired, setTrialExpired] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -40,13 +55,17 @@ export default function App() {
 
   useEffect(() => {
     if (session?.user && !provisioned) {
-      ensureUserProvisioned(session.user).then(() => setProvisioned(true));
+      ensureUserProvisioned(session.user)
+        .then(() => checkTrialExpired(session.user.id))
+        .then((expired) => setTrialExpired(expired))
+        .then(() => setProvisioned(true));
     }
   }, [session, provisioned]);
 
   if (session === undefined) return <LoadingScreen label="loading…" />;
   if (!session) return <Auth />;
   if (!provisioned) return <LoadingScreen label="setting up your account…" />;
+  if (trialExpired) return <Paywall />;
 
   return <PlannerApp session={session} />;
 }

@@ -13,17 +13,34 @@ const C = {
 };
 
 export default function Auth() {
+  const [mode, setMode] = useState("signin"); // "signin" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  const toggleMode = () => {
+    setMode((m) => (m === "signin" ? "signup" : "signin"));
+    setError("");
+    setInfo("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message);
+    setInfo("");
+
+    if (mode === "signup") {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else if (!data.session) setInfo("Check your email to confirm your account before signing in.");
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+    }
+
     setLoading(false);
   };
 
@@ -48,7 +65,9 @@ export default function Auth() {
           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: BRAND.sage, marginTop: 2 }}>
             Your All-in-One Supper Planner.
           </p>
-          <p className="text-xs mt-3" style={{ color: C.inkSoft }}>Sign in to your account</p>
+          <p className="text-xs mt-3" style={{ color: C.inkSoft }}>
+            {mode === "signup" ? "Start your free 7-day trial" : "Sign in to your account"}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -79,7 +98,7 @@ export default function Auth() {
             <input
               type="password"
               required
-              autoComplete="current-password"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
               className="auth-input w-full px-3 py-2 rounded-lg text-sm"
               style={{ border: `1px solid ${C.line}` }}
               value={password}
@@ -88,6 +107,7 @@ export default function Auth() {
           </div>
 
           {error && <div className="text-xs" style={{ color: C.danger }}>{error}</div>}
+          {info && <div className="text-xs" style={{ color: C.forest }}>{info}</div>}
 
           <button
             type="submit"
@@ -95,12 +115,17 @@ export default function Auth() {
             className="w-full py-2.5 rounded-lg text-sm font-medium text-white"
             style={{ background: C.forest, opacity: loading ? 0.7 : 1 }}
           >
-            {loading ? "Signing in…" : "Sign in"}
+            {loading
+              ? mode === "signup" ? "Creating account…" : "Signing in…"
+              : mode === "signup" ? "Start free trial" : "Sign in"}
           </button>
         </form>
 
         <p className="text-center text-xs mt-4" style={{ color: C.inkSoft }}>
-          No account yet? You'll get an email invite once you've signed up for beta access.
+          {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
+          <button onClick={toggleMode} className="underline font-medium" style={{ color: C.forest }}>
+            {mode === "signup" ? "Sign in" : "Start your free trial"}
+          </button>
         </p>
       </div>
     </div>

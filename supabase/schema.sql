@@ -10,16 +10,28 @@ create table if not exists profiles (
   username text unique not null,
   status text not null default 'active', -- 'active' | 'suspended'
   beta_cohort text,                      -- e.g. 'beta-1', for your own tracking
-  created_at timestamptz default now()
+  is_paid boolean not null default false, -- flip to true yourself once payment is confirmed
+  created_at timestamptz default now()   -- also doubles as the free-trial start date
 );
+
+alter table profiles add column if not exists is_paid boolean not null default false;
 
 alter table profiles enable row level security;
 
+-- Deliberately SELECT + INSERT only, no UPDATE — a signed-in user can read and
+-- create their own row, but can never edit is_paid (or anything else) on it
+-- themselves. Only you, via the Supabase dashboard, can flip is_paid to true.
 drop policy if exists "Users manage their own profile" on profiles;
-create policy "Users manage their own profile"
+drop policy if exists "Users can view their own profile" on profiles;
+create policy "Users can view their own profile"
   on profiles
-  for all
-  using (auth.uid() = id)
+  for select
+  using (auth.uid() = id);
+
+drop policy if exists "Users can insert their own profile" on profiles;
+create policy "Users can insert their own profile"
+  on profiles
+  for insert
   with check (auth.uid() = id);
 
 -- ---------------------------------------------------------------------------
