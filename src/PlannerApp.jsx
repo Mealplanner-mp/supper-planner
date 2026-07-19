@@ -1987,7 +1987,8 @@ export default function PlannerApp({ session }) {
           border-color: ${C.forest} !important;
           box-shadow: 0 0 0 3px rgba(63,91,69,0.16);
         }
-        input[type="checkbox"] { accent-color: ${C.forest}; cursor: pointer; }
+        input[type="checkbox"], input[type="radio"], select { accent-color: ${C.forest}; }
+        input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 
         button { transition: filter .15s ease, transform .08s ease, opacity .15s ease; }
         button:hover:not(:disabled):not(.tab-btn) { filter: brightness(1.07); }
