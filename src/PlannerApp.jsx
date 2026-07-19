@@ -1064,9 +1064,17 @@ function SettingsTab({ settings, setSettings }) {
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-8">
+    <div className="pb-8">
+      <p className="text-sm mb-4" style={{ color: C.inkSoft }}>
+        These settings shape how your weekly plan gets generated — change anything here, then hit{" "}
+        <strong style={{ color: C.forest }}>Generate</strong> on the Planner tab to see it take effect.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Card>
         <SectionLabel>Meat & dairy</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          Keeps a meat recipe and a dairy recipe from ever landing on the same day.
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={settings.noMeatDairyMix} onChange={(e) => set({ noMeatDairyMix: e.target.checked })} />
           Don't mix meat and dairy recipes in the same meal
@@ -1075,6 +1083,9 @@ function SettingsTab({ settings, setSettings }) {
 
       <Card>
         <SectionLabel>Daily meal composition</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          Pick which parts make up a typical supper — the planner tries to include one of each, every day.
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {COMPONENT_OPTIONS.map((c) => (
             <Chip
@@ -1090,6 +1101,9 @@ function SettingsTab({ settings, setSettings }) {
 
       <Card>
         <SectionLabel>Repetition</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          Controls how soon the same recipe is allowed to repeat, based on how it's tagged.
+        </div>
         <div className="space-y-2">
           {["regular", "easy", "favorite"].map((k) => (
             <div key={k} className="flex items-center justify-between">
@@ -1110,6 +1124,9 @@ function SettingsTab({ settings, setSettings }) {
 
       <Card>
         <SectionLabel>Priority</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          When filling a slot, the planner reaches for these recipes first before picking randomly.
+        </div>
         <label className="flex items-center gap-2 text-sm mb-2">
           <input type="checkbox" checked={settings.prioritizeFavorite} onChange={(e) => set({ prioritizeFavorite: e.target.checked })} />
           Always prioritize favorite recipes
@@ -1165,6 +1182,9 @@ function SettingsTab({ settings, setSettings }) {
 
       <Card>
         <SectionLabel>Freezer planning</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          Automatically schedules a freezer meal into the rotation on the day and frequency you set below.
+        </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm">Prep day</span>
@@ -1186,6 +1206,9 @@ function SettingsTab({ settings, setSettings }) {
 
       <Card>
         <SectionLabel>Baby-friendly planning</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+          Makes sure something baby-friendly shows up in the week's plan. Tag recipes as baby-friendly from the recipe card or editor.
+        </div>
         <label className="flex items-center gap-2 text-sm mb-2">
           <input
             type="checkbox"
@@ -1227,7 +1250,7 @@ function SettingsTab({ settings, setSettings }) {
               Keep baby-friendly recipes separate — they're never used for the regular meal, only added as the additional baby-friendly dish
             </label>
             <div className="text-xs italic mt-1" style={{ color: C.inkSoft }}>
-              Tag recipes as baby-friendly from the recipe card or editor, or manage the whole list from the Recipes tab.
+              Choose one of the three options above for how it gets added to the day's plan.
             </div>
           </div>
         )}
@@ -1265,6 +1288,7 @@ function SettingsTab({ settings, setSettings }) {
           })}
         </div>
       </Card>
+      </div>
     </div>
   );
 }
