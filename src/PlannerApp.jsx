@@ -2065,7 +2065,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
-        <div className="flex flex-wrap items-start gap-8">
+        <div className="flex flex-wrap items-start justify-center gap-8">
           <div>
             <SectionLabel>Days to plan</SectionLabel>
             <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 270 }}>
