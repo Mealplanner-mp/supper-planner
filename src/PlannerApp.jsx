@@ -9,6 +9,7 @@ import {
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
 import FloatingAssistant from "./FloatingAssistant.jsx";
+import WelcomeGuide from "./WelcomeGuide.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens (see inline <style> below for fonts + card texture)      */
@@ -2288,6 +2289,7 @@ export default function PlannerApp({ session }) {
   }, [recipes]);
 
   const handleLogout = () => { supabase.auth.signOut(); };
+  const dismissWelcome = () => setSettings((s) => ({ ...s, hasSeenWelcome: true }));
 
   if (!loaded) {
     return (
@@ -2405,6 +2407,8 @@ export default function PlannerApp({ session }) {
         )}
         {tab === "settings" && <SettingsTab settings={settings} setSettings={setSettings} />}
       </div>
+
+      {!settings.hasSeenWelcome && <WelcomeGuide onClose={dismissWelcome} />}
 
       <FloatingAssistant />
     </div>
