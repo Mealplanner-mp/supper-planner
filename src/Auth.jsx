@@ -14,7 +14,7 @@ const C = {
 };
 
 export default function Auth() {
-  const [mode, setMode] = useState("signin"); // "signin" | "signup"
+  const [mode, setMode] = useState("signin"); // "signin" | "signup" | "forgot"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,8 +22,8 @@ export default function Auth() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const toggleMode = () => {
-    setMode((m) => (m === "signin" ? "signup" : "signin"));
+  const switchMode = (next) => {
+    setMode(next);
     setError("");
     setInfo("");
   };
@@ -38,6 +38,12 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) setError(error.message);
       else if (!data.session) setInfo("Check your email to confirm your account before signing in.");
+    } else if (mode === "forgot") {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      });
+      if (error) setError(error.message);
+      else setInfo("Check your email for a link to reset your password.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setError(error.message);
@@ -68,7 +74,7 @@ export default function Auth() {
             Your All-in-One Supper Planner.
           </p>
           <p className="text-xs mt-3" style={{ color: C.inkSoft }}>
-            {mode === "signup" ? "Start your free 7-day trial" : "Sign in to your account"}
+            {mode === "signup" ? "Start your free 7-day trial" : mode === "forgot" ? "Reset your password" : "Sign in to your account"}
           </p>
         </div>
 
@@ -90,34 +96,47 @@ export default function Auth() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div>
-            <label
-              className="block text-xs font-semibold uppercase mb-1"
-              style={{ fontFamily: "'Inter', sans-serif", color: C.forest, letterSpacing: "0.08em" }}
-            >
-              Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                className="auth-input w-full px-3 py-2 pr-9 rounded-lg text-sm"
-                style={{ border: `1px solid ${C.line}` }}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2"
-                tabIndex={-1}
-                title={showPassword ? "Hide password" : "Show password"}
+
+          {mode !== "forgot" && (
+            <div>
+              <label
+                className="block text-xs font-semibold uppercase mb-1"
+                style={{ fontFamily: "'Inter', sans-serif", color: C.forest, letterSpacing: "0.08em" }}
               >
-                {showPassword ? <EyeOff size={16} color={C.inkSoft} /> : <Eye size={16} color={C.inkSoft} />}
-              </button>
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  className="auth-input w-full px-3 py-2 pr-9 rounded-lg text-sm"
+                  style={{ border: `1px solid ${C.line}` }}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                  tabIndex={-1}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={16} color={C.inkSoft} /> : <Eye size={16} color={C.inkSoft} />}
+                </button>
+              </div>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("forgot")}
+                  className="text-xs underline mt-1.5"
+                  style={{ color: C.inkSoft }}
+                >
+                  Forgot password?
+                </button>
+              )}
             </div>
-          </div>
+          )}
 
           {error && <div className="text-xs" style={{ color: C.danger }}>{error}</div>}
           {info && <div className="text-xs" style={{ color: C.forest }}>{info}</div>}
@@ -129,17 +148,25 @@ export default function Auth() {
             style={{ background: C.forest, opacity: loading ? 0.7 : 1 }}
           >
             {loading
-              ? mode === "signup" ? "Creating account…" : "Signing in…"
-              : mode === "signup" ? "Start free trial" : "Sign in"}
+              ? mode === "signup" ? "Creating account…" : mode === "forgot" ? "Sending…" : "Signing in…"
+              : mode === "signup" ? "Start free trial" : mode === "forgot" ? "Send reset link" : "Sign in"}
           </button>
         </form>
 
-        <p className="text-center text-xs mt-4" style={{ color: C.inkSoft }}>
-          {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
-          <button onClick={toggleMode} className="underline font-medium" style={{ color: C.forest }}>
-            {mode === "signup" ? "Sign in" : "Start your free trial"}
-          </button>
-        </p>
+        {mode === "forgot" ? (
+          <p className="text-center text-xs mt-4" style={{ color: C.inkSoft }}>
+            <button onClick={() => switchMode("signin")} className="underline font-medium" style={{ color: C.forest }}>
+              Back to sign in
+            </button>
+          </p>
+        ) : (
+          <p className="text-center text-xs mt-4" style={{ color: C.inkSoft }}>
+            {mode === "signup" ? "Already have an account?" : "New here?"}{" "}
+            <button onClick={() => switchMode(mode === "signup" ? "signin" : "signup")} className="underline font-medium" style={{ color: C.forest }}>
+              {mode === "signup" ? "Sign in" : "Start your free trial"}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

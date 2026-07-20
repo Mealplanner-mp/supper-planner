@@ -3,6 +3,7 @@ import { supabase } from "./supabaseClient";
 import Auth from "./Auth.jsx";
 import PlannerApp from "./PlannerApp.jsx";
 import Paywall from "./Paywall.jsx";
+import ResetPassword from "./ResetPassword.jsx";
 
 const TRIAL_DAYS = 7;
 
@@ -43,10 +44,12 @@ export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
   const [provisioned, setProvisioned] = useState(false);
   const [trialExpired, setTrialExpired] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setSession(newSession);
       setProvisioned(false);
     });
@@ -63,6 +66,7 @@ export default function App() {
   }, [session, provisioned]);
 
   if (session === undefined) return <LoadingScreen label="loading…" />;
+  if (passwordRecovery) return <ResetPassword onDone={() => setPasswordRecovery(false)} />;
   if (!session) return <Auth />;
   if (!provisioned) return <LoadingScreen label="setting up your account…" />;
   if (trialExpired) return <Paywall />;
