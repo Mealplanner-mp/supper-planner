@@ -2105,7 +2105,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
               )}
             </div>
           </div>
-          <div>
+          <div style={{ marginLeft: 16 }}>
             <SectionLabel>This week, avoid</SectionLabel>
             <div className="flex flex-col gap-1.5">
               {["meat", "fish", "dairy"].map((cat) => (
