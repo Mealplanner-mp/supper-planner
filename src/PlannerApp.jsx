@@ -1674,6 +1674,14 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
   const babyRequiredComponents = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "components"
     ? settings.babyFriendly.components || []
     : [];
+  // true if placing this recipe would occupy a required-baby-friendly component slot
+  // without actually being baby-friendly — applies to every placement path (locked,
+  // leftover follow-up, freezer prep, and the normal fill), not just the normal fill
+  const violatesBabyRequirement = (recipe) => {
+    if (!babyRequiredComponents.length || recipe.babyFriendly) return false;
+    const types = recipe.type === "combo" ? recipe.comboTypes : [recipe.type];
+    return types.some((t) => babyRequiredComponents.includes(t));
+  };
 
   // pre-place locked recipes
   const lockedAssignments = {};
@@ -1694,7 +1702,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     // 1. Freezer prep day — mode (part of meal vs. separate task) is set per recipe
     if (dayName === settings.freezer.day) {
       const frequencyWeeks = REPEAT_WEEKS[settings.freezer.frequency] || 2;
-      const dueFreezerCandidates = recipes.filter((r) => r.freezer && !excludeCategories.includes(r.category) && !excludedForRegularMeal(r) && weeksSince((newHistory[r.id] || []).slice(-1)[0]) >= frequencyWeeks && !usedThisWeek.has(r.id));
+      const dueFreezerCandidates = recipes.filter((r) => r.freezer && !excludeCategories.includes(r.category) && !excludedForRegularMeal(r) && !(r.freezerPrepMode !== "separate" && violatesBabyRequirement(r)) && weeksSince((newHistory[r.id] || []).slice(-1)[0]) >= frequencyWeeks && !usedThisWeek.has(r.id));
       const dueFreezer = pickRandom(dueFreezerCandidates);
       if (dueFreezer) {
         newStock[dueFreezer.id] = { remaining: dueFreezer.freezerServings, servings: dueFreezer.freezerServings };
@@ -1718,6 +1726,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
 
     // 2. Locked recipes for this day
     (lockedAssignments[dayName] || []).forEach((r) => {
+      if (violatesBabyRequirement(r)) return; // skip — the normal fill below will cover this component with a baby-friendly pick instead
       const comp = r.type === "combo" ? "combo" : r.type;
       daySlots.push({ component: comp, coveredComponents: r.type === "combo" ? r.comboTypes : [r.type], recipeId: r.id });
       dayAssignedCategories.push(r.category);
@@ -1733,7 +1742,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     // 3. Leftover follow-up required today
     if (pendingLeftoverFollowUp[idx]) {
       const followRecipe = recipes.find((r) => r.usesLeftoverFrom === pendingLeftoverFollowUp[idx]);
-      if (followRecipe && !usedThisWeek.has(followRecipe.id)) {
+      if (followRecipe && !usedThisWeek.has(followRecipe.id) && !violatesBabyRequirement(followRecipe)) {
         const comp = followRecipe.type === "combo" ? "combo" : followRecipe.type;
         daySlots.push({ component: comp, coveredComponents: followRecipe.type === "combo" ? followRecipe.comboTypes : [followRecipe.type], recipeId: followRecipe.id, isLeftoverFollowUp: true });
         dayAssignedCategories.push(followRecipe.category);
