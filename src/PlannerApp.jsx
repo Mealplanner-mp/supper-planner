@@ -87,7 +87,7 @@ const DEFAULT_SETTINGS = {
   freezer: { day: "Sunday", frequency: "biweekly" },
   weeklyDayRules: DAYS.reduce((acc, d) => ({ ...acc, [d]: { category: "", simplicity: "" } }), {}),
   ingredientCategories: [...INGREDIENT_CATEGORIES],
-  babyFriendly: { enabled: false, mode: "onlyIfMissing" }, // mode: "onlyIfMissing" | "always"
+  babyFriendly: { enabled: false, mode: "separate", components: [] }, // mode: "separate" | "components"
 };
 
 const emptyRecipe = () => ({
@@ -1518,39 +1518,51 @@ function SettingsTab({ settings, setSettings }) {
           Enable baby-friendly planning
         </label>
         {settings.babyFriendly.enabled && (
-          <div className="space-y-1.5 mt-1">
-            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
-              <input
-                type="radio"
-                name="babyFriendlyMode"
-                className="mt-0.5"
-                checked={settings.babyFriendly.mode === "onlyIfMissing"}
-                onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "onlyIfMissing" } })}
-              />
-              Add a baby-friendly recipe only if no part of the meal is already baby-friendly
-            </label>
-            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
-              <input
-                type="radio"
-                name="babyFriendlyMode"
-                className="mt-0.5"
-                checked={settings.babyFriendly.mode === "always"}
-                onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "always" } })}
-              />
-              Always add a baby-friendly recipe, regardless of the rest of the meal
-            </label>
-            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
-              <input
-                type="radio"
-                name="babyFriendlyMode"
-                className="mt-0.5"
-                checked={settings.babyFriendly.mode === "separate"}
-                onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "separate" } })}
-              />
-              Keep baby-friendly recipes separate — they're never used for the regular meal, only added as the additional baby-friendly dish
-            </label>
-            <div className="text-xs italic mt-1" style={{ color: C.inkSoft }}>
-              Choose one of the three options above for how it gets added to the day's plan.
+          <div className="space-y-2 mt-1">
+            <div>
+              <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
+                <input
+                  type="radio"
+                  name="babyFriendlyMode"
+                  className="mt-0.5"
+                  checked={settings.babyFriendly.mode === "separate"}
+                  onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "separate" } })}
+                />
+                Keep baby-friendly recipes separate — they're never used for the regular meal, only added as the additional baby-friendly dish
+              </label>
+              <div className="text-xs italic mt-1 ml-5" style={{ color: C.inkSoft }}>
+                Since only one baby-friendly dish gets added per day, ideally tag recipes that cover baby's whole meal, not just one component.
+              </div>
+            </div>
+
+            <div>
+              <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
+                <input
+                  type="radio"
+                  name="babyFriendlyMode"
+                  className="mt-0.5"
+                  checked={settings.babyFriendly.mode === "components"}
+                  onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "components" } })}
+                />
+                The following parts of the meal should be baby-friendly:
+              </label>
+              {settings.babyFriendly.mode === "components" && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5 ml-5">
+                  {COMPONENT_OPTIONS.map((c) => (
+                    <Chip
+                      key={c}
+                      active={(settings.babyFriendly.components || []).includes(c)}
+                      onClick={() => {
+                        const current = settings.babyFriendly.components || [];
+                        const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+                        set({ babyFriendly: { ...settings.babyFriendly, components: next } });
+                      }}
+                    >
+                      {c}
+                    </Chip>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1657,6 +1669,12 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
   const babyReservedOnly = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "separate";
   const excludedForRegularMeal = (recipe) => babyReservedOnly && recipe.babyFriendly;
 
+  // in "components" mode, specific meal components (e.g. protein, starch) must themselves
+  // be filled by a baby-friendly recipe — no separate extra dish gets added
+  const babyRequiredComponents = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "components"
+    ? settings.babyFriendly.components || []
+    : [];
+
   // pre-place locked recipes
   const lockedAssignments = {};
   recipes.forEach((r) => {
@@ -1737,6 +1755,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
         if (r.usesLeftoverFrom) return false; // only placed via follow-up logic
         if (excludeCategories.includes(r.category)) return false;
         if (excludedForRegularMeal(r)) return false;
+        if (babyRequiredComponents.includes(component) && !r.babyFriendly) return false;
         const providesComponent = r.type === component || (r.type === "combo" && r.comboTypes.includes(component));
         if (!providesComponent) return false;
         if (r.type === "combo") {
@@ -1812,35 +1831,32 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
       }
     }
 
-    // 5. Baby-friendly addition — either fill a gap or always tack one on, per settings
-    if (settings.babyFriendly?.enabled) {
-      const alreadyBabyFriendly = daySlots.some((s) => recipes.find((r) => r.id === s.recipeId)?.babyFriendly);
-      const shouldAddBaby = babyReservedOnly || settings.babyFriendly.mode === "always" || !alreadyBabyFriendly;
-      if (shouldAddBaby) {
-        const babyCandidates = recipes.filter((r) => {
-          if (!r.babyFriendly) return false;
-          if (usedThisWeek.has(r.id)) return false;
-          if (excludeCategories.includes(r.category)) return false;
-          if (!dayCategoryOK(r, dayAssignedCategories)) return false;
-          if (r.freezer) {
-            const stock = newStock[r.id];
-            if (!stock || stock.remaining <= 0) return false;
-          }
-          return true;
-        });
-        const repetitionOK = babyCandidates.filter(eligibleByRepetition);
-        const babyPool = repetitionOK.length > 0 ? repetitionOK : babyCandidates;
-        const babyPick = pickRandom(babyPool);
-        if (babyPick) {
-          daySlots.push({ component: "baby", recipeId: babyPick.id, isBaby: true });
-          dayAssignedCategories.push(babyPick.category);
-          recordUsage(babyPick.id);
-          if (babyPick.freezer && newStock[babyPick.id]) {
-            newStock[babyPick.id] = { ...newStock[babyPick.id], remaining: newStock[babyPick.id].remaining - 1 };
-          }
-        } else {
-          warnings.push(`No baby-friendly recipe available for ${dayName}.`);
+    // 5. Baby-friendly addition — only in "separate" mode; "components" mode bakes the
+    // requirement directly into the regular component-filling above instead
+    if (babyReservedOnly) {
+      const babyCandidates = recipes.filter((r) => {
+        if (!r.babyFriendly) return false;
+        if (usedThisWeek.has(r.id)) return false;
+        if (excludeCategories.includes(r.category)) return false;
+        if (!dayCategoryOK(r, dayAssignedCategories)) return false;
+        if (r.freezer) {
+          const stock = newStock[r.id];
+          if (!stock || stock.remaining <= 0) return false;
         }
+        return true;
+      });
+      const repetitionOK = babyCandidates.filter(eligibleByRepetition);
+      const babyPool = repetitionOK.length > 0 ? repetitionOK : babyCandidates;
+      const babyPick = pickRandom(babyPool);
+      if (babyPick) {
+        daySlots.push({ component: "baby", recipeId: babyPick.id, isBaby: true });
+        dayAssignedCategories.push(babyPick.category);
+        recordUsage(babyPick.id);
+        if (babyPick.freezer && newStock[babyPick.id]) {
+          newStock[babyPick.id] = { ...newStock[babyPick.id], remaining: newStock[babyPick.id].remaining - 1 };
+        }
+      } else {
+        warnings.push(`No baby-friendly recipe available for ${dayName}.`);
       }
     }
 
@@ -2285,7 +2301,11 @@ export default function PlannerApp({ session }) {
           migratedRules[d] = old || { category: "", simplicity: "" };
         }
       });
-      setSettings({ ...DEFAULT_SETTINGS, ...s, weeklyDayRules: migratedRules });
+      // migrate legacy baby-friendly modes ("onlyIfMissing" / "always") to "separate"
+      const babyFriendly = s.babyFriendly
+        ? { ...DEFAULT_SETTINGS.babyFriendly, ...s.babyFriendly, mode: ["separate", "components"].includes(s.babyFriendly.mode) ? s.babyFriendly.mode : "separate" }
+        : DEFAULT_SETTINGS.babyFriendly;
+      setSettings({ ...DEFAULT_SETTINGS, ...s, weeklyDayRules: migratedRules, babyFriendly });
       setPlan(p);
       setUsageHistory(h);
       setFreezerStock(f);
