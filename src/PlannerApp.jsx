@@ -2061,7 +2061,7 @@ export default function PlannerApp({ session }) {
       <div className="px-3 sm:px-6 pt-4 sm:pt-6 pb-0 max-w-7xl mx-auto no-print">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2.5">
-            <Logo size={38} />
+            <Logo size={72} />
             <div className="flex flex-col leading-tight">
               <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 17, color: C.ink }}>Stress Less. Enjoy More.</h1>
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: BRAND.sage }}>Your All-in-One Supper Planner.</span>

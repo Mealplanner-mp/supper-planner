@@ -60,7 +60,7 @@ export default function Auth() {
         style={{ background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 1px 2px rgba(46,42,34,0.05)" }}
       >
         <div className="flex flex-col items-center text-center mb-6">
-          <Logo size={56} />
+          <Logo size={170} />
           <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 24, color: C.ink, marginTop: 12 }}>
             Stress Less. Enjoy More.
           </h1>
