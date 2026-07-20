@@ -2068,7 +2068,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
         <div className="flex flex-wrap items-start gap-8">
           <div>
             <SectionLabel>Days to plan</SectionLabel>
-            <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 200 }}>
+            <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 270 }}>
               {DAYS.map((d) => (
                 <Chip key={d} active={selectedDays.includes(d)} onClick={() => toggleDay(d)}>{d.slice(0, 3)}</Chip>
               ))}
