@@ -11,7 +11,7 @@ export default function Logo({ size = 48 }) {
     <img
       src={logoImg}
       alt="Plan to Dish"
-      style={{ width: size, height: "auto", display: "block" }}
+      style={{ width: size, height: "auto", display: "block", mixBlendMode: "multiply" }}
     />
   );
 }
