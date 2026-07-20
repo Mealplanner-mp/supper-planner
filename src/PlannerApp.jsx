@@ -3,10 +3,12 @@ import {
   Heart, Zap, Snowflake, Lock, ArrowRightLeft, Plus, X, Pencil, Trash2,
   ChevronDown, ChevronRight, Search, RefreshCw, Calendar, ShoppingCart,
   Settings as SettingsIcon, BookOpen, Download, AlertTriangle, Check,
-  GripVertical, Clock, Copy, Printer, LogOut, Baby
+  GripVertical, Clock, Copy, Printer, LogOut, Baby, Sparkles, Upload,
+  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
+import FloatingAssistant from "./FloatingAssistant.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens (see inline <style> below for fonts + card texture)      */
@@ -107,6 +109,68 @@ const emptyRecipe = () => ({
   notes: "",
   prepReminders: "",
 });
+
+function recipeFromAIDraft(parsed) {
+  const base = emptyRecipe();
+  return {
+    ...base,
+    name: parsed.name || base.name,
+    type: TYPE_OPTIONS.includes(parsed.type) ? parsed.type : base.type,
+    comboTypes: Array.isArray(parsed.comboTypes) ? parsed.comboTypes.filter((c) => COMPONENT_OPTIONS.includes(c)) : base.comboTypes,
+    category: CATEGORY_OPTIONS.includes(parsed.category) ? parsed.category : base.category,
+    simplicity: Array.isArray(parsed.simplicity) ? parsed.simplicity.filter((s) => SIMPLICITY_OPTIONS.some((o) => o.key === s)) : base.simplicity,
+    ingredients: Array.isArray(parsed.ingredients)
+      ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "" }))
+      : base.ingredients,
+    notes: parsed.notes || base.notes,
+    prepReminders: parsed.prepReminders || base.prepReminders,
+  };
+}
+
+/* ---------------------------------------------------------------------- */
+/* AI helpers — all calls go through the ai-assistant Supabase Edge       */
+/* Function, which holds the Anthropic API key server-side.               */
+/* ---------------------------------------------------------------------- */
+const RETRYABLE_ERROR_HINTS = ["overloaded", "rate_limit", "429", "529", "503", "timeout", "network"];
+
+function isRetryableError(err) {
+  const msg = (err?.message || "").toLowerCase();
+  return RETRYABLE_ERROR_HINTS.some((hint) => msg.includes(hint));
+}
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+async function callAIOnce(payload) {
+  const { data, error } = await supabase.functions.invoke("ai-assistant", { body: payload });
+  if (error) throw new Error(error.message || "Request failed — check your connection and try again.");
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+async function callAI(payload, onRetry) {
+  const maxAttempts = 5;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await callAIOnce(payload);
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts && isRetryableError(e)) {
+        if (onRetry) onRetry(attempt, maxAttempts);
+        const jitter = Math.random() * 400;
+        await sleep(Math.min(attempt * 900 + jitter, 6000));
+        continue;
+      }
+      break;
+    }
+  }
+  if (isRetryableError(lastErr)) {
+    const busyErr = new Error("The AI is busy right now — this is common for a shared service at peak times. Tap Retry to try again.");
+    busyErr.retryable = true;
+    throw busyErr;
+  }
+  throw lastErr;
+}
 
 /* ---------------------------------------------------------------------- */
 /* Storage helpers (Supabase — one row per user in planner_data)          */
@@ -369,10 +433,15 @@ function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, baby
 /* ---------------------------------------------------------------------- */
 /* Recipe Editor Modal                                                    */
 /* ---------------------------------------------------------------------- */
-function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, babyFriendlyEnabled, onSave, onClose }) {
+function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, babyFriendlyEnabled, onSave, onClose, initialAIGenerated }) {
   const [r, setR] = useState(recipe);
   const [ingredientCatFocus, setIngredientCatFocus] = useState(null);
   const [nameError, setNameError] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraftMsg, setAiDraftMsg] = useState("");
+  const [aiDraftFailed, setAiDraftFailed] = useState(false);
+  const [aiGenerated, setAiGenerated] = useState(!!initialAIGenerated);
 
   const set = (patch) => setR((prev) => ({ ...prev, ...patch }));
 
@@ -396,6 +465,40 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
     set({ simplicity: has ? r.simplicity.filter((x) => x !== k) : [...r.simplicity, k] });
   };
 
+  const runAISearch = async () => {
+    if (!aiQuery.trim()) return;
+    setAiLoading(true);
+    setAiDraftMsg("");
+    setAiDraftFailed(false);
+    try {
+      const data = await callAI(
+        { mode: "search", query: aiQuery },
+        (attempt, max) => setAiDraftMsg(`Kitchen's busy — trying again (${attempt}/${max - 1})…`)
+      );
+      const parsed = data.recipe;
+      set({
+        name: parsed.name || r.name,
+        type: TYPE_OPTIONS.includes(parsed.type) ? parsed.type : r.type,
+        comboTypes: Array.isArray(parsed.comboTypes) ? parsed.comboTypes.filter((c) => COMPONENT_OPTIONS.includes(c)) : r.comboTypes,
+        category: CATEGORY_OPTIONS.includes(parsed.category) ? parsed.category : r.category,
+        simplicity: Array.isArray(parsed.simplicity) ? parsed.simplicity.filter((s) => SIMPLICITY_OPTIONS.some((o) => o.key === s)) : r.simplicity,
+        ingredients: Array.isArray(parsed.ingredients)
+          ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "" }))
+          : r.ingredients,
+        notes: parsed.notes || r.notes,
+        prepReminders: parsed.prepReminders || r.prepReminders,
+      });
+      setAiDraftMsg("Draft filled in below — review and adjust, then save.");
+      setAiGenerated(true);
+    } catch (e) {
+      console.error("AI recipe search failed:", e);
+      setAiDraftMsg(e.message);
+      setAiDraftFailed(true);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 py-8 overflow-y-auto" style={{ background: "rgba(46,42,34,0.55)" }} onClick={onClose}>
       <div
@@ -409,6 +512,52 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
           </h3>
           <button onClick={onClose}><X size={18} color={C.inkSoft} /></button>
         </div>
+
+        {aiGenerated && (
+          <div className="shrink-0 mx-4 mt-2 px-3 py-1.5 rounded-lg flex items-start gap-2" style={{ background: "#FDECE6", border: `1px solid ${C.rust}` }}>
+            <AlertTriangle size={13} color={C.rust} style={{ marginTop: 1, flexShrink: 0 }} />
+            <span className="text-xs" style={{ color: C.ink }}>
+              This card was filled in by AI. Please review before saving — AI can make mistakes.
+            </span>
+          </div>
+        )}
+
+        {!recipe.name && !initialAIGenerated && (
+          <div className="shrink-0 px-4 pt-2">
+            <Card style={{ background: "#EEF1EC" }}>
+              <SectionLabel>AI recipe search</SectionLabel>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${C.line}`, background: C.white }}
+                  placeholder='e.g. "spicy salmon" or "a drink recipe with dates"'
+                  value={aiQuery}
+                  onChange={(e) => setAiQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !aiLoading) { e.preventDefault(); runAISearch(); } }}
+                />
+                <button
+                  onClick={runAISearch}
+                  disabled={aiLoading}
+                  className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 text-white"
+                  style={{ background: C.forest }}
+                >
+                  {aiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  Draft it
+                </button>
+              </div>
+              {aiDraftMsg && (
+                <div className="text-xs mt-2 flex items-center gap-2" style={{ color: aiDraftFailed ? C.danger : C.forest }}>
+                  <span>{aiDraftMsg}</span>
+                  {aiDraftFailed && (
+                    <button onClick={runAISearch} className="underline font-medium" style={{ color: C.forest }}>
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
 
         <div className="flex-1 min-h-0 p-4 overflow-y-auto md:overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:h-full">
@@ -625,10 +774,134 @@ function BabyFriendlyListModal({ recipes, setRecipes, onClose }) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* New recipe: choose manual vs upload                                    */
+/* ---------------------------------------------------------------------- */
+function NewRecipeChooser({ onManual, onUpload, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 py-8 overflow-y-auto" style={{ background: "rgba(46,42,34,0.55)" }} onClick={onClose}>
+      <div className="pop-in rounded-2xl w-full max-w-sm p-5 my-auto" style={{ background: C.paper, border: `1px solid ${C.line}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 18, color: C.ink }}>Add a recipe</h3>
+          <button onClick={onClose}><X size={18} color={C.inkSoft} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={onManual} className="flex flex-col items-center gap-2 py-6 rounded-xl transition-colors" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+            <PenLine size={22} color={C.forest} />
+            <span className="text-sm font-medium" style={{ color: C.ink }}>Add manually</span>
+          </button>
+          <button onClick={onUpload} className="flex flex-col items-center gap-2 py-6 rounded-xl transition-colors" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+            <Upload size={22} color={C.forest} />
+            <span className="text-sm font-medium" style={{ color: C.ink }}>Upload photo / link</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UploadRecipeModal({ onDraft, onClose }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [link, setLink] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [errorFailed, setErrorFailed] = useState(false);
+
+  const handleFile = (f) => {
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = () => setPreview(reader.result);
+    reader.readAsDataURL(f);
+  };
+
+  const generate = async () => {
+    if (!file && !link.trim()) { setError("Add a photo or paste a link first."); setErrorFailed(true); return; }
+    setLoading(true);
+    setError("");
+    setErrorFailed(false);
+    try {
+      const payload = file
+        ? { mode: "upload", image: { mediaType: file.type || "image/jpeg", data: preview.split(",")[1] } }
+        : { mode: "upload", link };
+      const data = await callAI(payload, (attempt, max) => setError(`Kitchen's busy — trying again (${attempt}/${max - 1})…`));
+      onDraft(data.recipe);
+    } catch (e) {
+      console.error("AI recipe upload failed:", e);
+      setError(e.message);
+      setErrorFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 py-8 overflow-y-auto" style={{ background: "rgba(46,42,34,0.55)" }} onClick={onClose}>
+      <div className="pop-in rounded-2xl w-full max-w-md p-5 my-auto" style={{ background: C.paper, border: `1px solid ${C.line}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 18, color: C.ink }}>Upload a recipe</h3>
+          <button onClick={onClose}><X size={18} color={C.inkSoft} /></button>
+        </div>
+
+        <SectionLabel>Photo of a recipe</SectionLabel>
+        <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg p-4 mb-4 cursor-pointer text-center" style={{ border: `1.5px dashed ${C.line}`, background: C.white, minHeight: 96 }}>
+          {preview ? (
+            <img src={preview} alt="preview" className="max-h-28 rounded" />
+          ) : (
+            <>
+              <ImagePlus size={22} color={C.inkSoft} />
+              <span className="text-xs" style={{ color: C.inkSoft }}>Tap to choose a photo</span>
+            </>
+          )}
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])} />
+        </label>
+
+        <SectionLabel>Or paste a link</SectionLabel>
+        <div className="relative mb-4">
+          <LinkIcon size={14} className="absolute left-2.5 top-2.5" color={C.inkSoft} />
+          <input
+            className="w-full pl-8 pr-3 py-2 rounded-lg text-sm"
+            style={{ border: `1px solid ${C.line}`, background: C.white }}
+            placeholder="https://…"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            disabled={!!file}
+            onKeyDown={(e) => { if (e.key === "Enter" && !loading) { e.preventDefault(); generate(); } }}
+          />
+        </div>
+
+        {error && (
+          <div className="text-xs mb-3 flex items-center gap-2" style={{ color: errorFailed ? C.danger : C.forest }}>
+            <span>{error}</span>
+            {errorFailed && (file || link.trim()) && (
+              <button onClick={generate} className="underline font-medium" style={{ color: C.forest }}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium text-white"
+          style={{ background: C.forest, opacity: loading ? 0.7 : 1 }}
+        >
+          {loading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          {loading ? "Reading recipe…" : "Generate draft"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /* Recipes Tab                                                            */
 /* ---------------------------------------------------------------------- */
 function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories, babyFriendlyEnabled }) {
   const [editing, setEditing] = useState(null);
+  const [editingAIGenerated, setEditingAIGenerated] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [pendingUndo, setPendingUndo] = useState(null); // { recipe, index }
@@ -652,6 +925,7 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
       return exists ? prev.map((x) => (x.id === r.id ? r : x)) : [...prev, r];
     });
     setEditing(null);
+    setEditingAIGenerated(false);
   };
 
   const requestDelete = (id) => setConfirmDeleteId(id);
@@ -689,8 +963,24 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
 
   const toggle = (id, field) => setRecipes((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: !r[field] } : r)));
 
-  const openManual = () => setEditing(emptyRecipe());
-  const openEdit = (r) => setEditing(r);
+  const openManual = () => {
+    setChooserOpen(false);
+    setEditingAIGenerated(false);
+    setEditing(emptyRecipe());
+  };
+  const openUpload = () => {
+    setChooserOpen(false);
+    setUploadOpen(true);
+  };
+  const handleUploadDraft = (parsed) => {
+    setUploadOpen(false);
+    setEditingAIGenerated(true);
+    setEditing(recipeFromAIDraft(parsed));
+  };
+  const openEdit = (r) => {
+    setEditingAIGenerated(false);
+    setEditing(r);
+  };
 
   const deletingRecipe = recipes.find((r) => r.id === confirmDeleteId);
 
@@ -718,7 +1008,7 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
             </button>
           )}
           <button
-            onClick={openManual}
+            onClick={() => setChooserOpen(true)}
             className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
             style={{ background: C.forest }}
           >
@@ -778,8 +1068,16 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
       {recipes.length === 0 && (
         <div className="fade-in text-center py-10 mt-2 flex flex-col items-center gap-2" style={{ color: C.inkSoft }}>
           <BookOpen size={26} color={C.line} />
-          <div>Nothing in the recipe box yet — tap <strong style={{ color: C.forest }}>New recipe</strong> to add your first one.</div>
+          <div>Nothing in the recipe box yet — tap <strong style={{ color: C.forest }}>New recipe</strong> to add your first one, manually or from a photo.</div>
         </div>
+      )}
+
+      {chooserOpen && (
+        <NewRecipeChooser onManual={openManual} onUpload={openUpload} onClose={() => setChooserOpen(false)} />
+      )}
+
+      {uploadOpen && (
+        <UploadRecipeModal onDraft={handleUploadDraft} onClose={() => setUploadOpen(false)} />
       )}
 
       {editing && (
@@ -790,7 +1088,8 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
           ingredientCategories={ingredientCategories}
           babyFriendlyEnabled={babyFriendlyEnabled}
           onSave={save}
-          onClose={() => setEditing(null)}
+          onClose={() => { setEditing(null); setEditingAIGenerated(false); }}
+          initialAIGenerated={editingAIGenerated}
         />
       )}
 
@@ -2106,6 +2405,8 @@ export default function PlannerApp({ session }) {
         )}
         {tab === "settings" && <SettingsTab settings={settings} setSettings={setSettings} />}
       </div>
+
+      <FloatingAssistant />
     </div>
   );
 }
