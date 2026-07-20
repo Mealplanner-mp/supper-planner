@@ -2074,7 +2074,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
               ))}
             </div>
           </div>
-          <div className="self-center" style={{ width: 260 }}>
+          <div style={{ width: 260 }}>
             <SectionLabel>Use up ingredients this week</SectionLabel>
             <div className="flex gap-2">
               <input
@@ -2114,7 +2114,8 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
               ))}
             </div>
           </div>
-          <div className="flex flex-col w-full sm:w-auto self-center">
+          <div className="flex flex-col w-full sm:w-auto">
+            <div className="text-xs font-semibold mb-1" style={{ opacity: 0 }} aria-hidden="true">&nbsp;</div>
             <div className="flex gap-2 w-full sm:w-auto">
               <button onClick={doGenerate} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: C.forest }}>
                 <Calendar size={15} /> Generate
