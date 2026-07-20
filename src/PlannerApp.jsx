@@ -2074,7 +2074,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
               ))}
             </div>
           </div>
-          <div style={{ width: 260 }}>
+          <div className="self-center" style={{ width: 260 }}>
             <SectionLabel>Use up ingredients this week</SectionLabel>
             <div className="flex gap-2">
               <input
@@ -2093,17 +2093,15 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
                 Add
               </button>
             </div>
-            <div className="mt-2" style={{ height: 28 }}>
-              {useUpIngredients.length > 0 && (
-                <div className="flex gap-1.5 overflow-x-auto" style={{ height: 28 }}>
-                  {useUpIngredients.map((ing) => (
-                    <span key={ing} className="text-xs px-2 py-1 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
-                      {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {useUpIngredients.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto mt-2" style={{ height: 28 }}>
+                {useUpIngredients.map((ing) => (
+                  <span key={ing} className="text-xs px-2 py-1 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
+                    {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ marginLeft: 16 }}>
             <SectionLabel>This week, avoid</SectionLabel>
