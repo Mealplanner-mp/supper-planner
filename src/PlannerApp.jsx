@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, Search, RefreshCw, Calendar, ShoppingCart,
   Settings as SettingsIcon, BookOpen, Download, AlertTriangle, Check,
   GripVertical, Clock, Copy, Printer, LogOut, Baby, Sparkles, Upload,
-  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send
+  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
@@ -1854,14 +1854,26 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
 /* ---------------------------------------------------------------------- */
 /* Planner Tab                                                            */
 /* ---------------------------------------------------------------------- */
-function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHistory, freezerStock, setFreezerStock, setGroceryChecked }) {
+function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory, setUsageHistory, freezerStock, setFreezerStock, setGroceryChecked }) {
   const [selectedDays, setSelectedDays] = useState([...DAYS]);
   const [useUpIngredients, setUseUpIngredients] = useState([]);
   const [useUpInput, setUseUpInput] = useState("");
   const [excludeCategories, setExcludeCategories] = useState([]); // e.g. ["meat", "fish", "dairy"]
   const [warnings, setWarnings] = useState([]);
   const [pendingSlotUndo, setPendingSlotUndo] = useState(null); // { dayName, index, slot }
+  const [viewingRecipe, setViewingRecipe] = useState(null);
   const weekBaselineRef = useRef(null); // { weekStart, freezerStock } — snapshot so regenerating doesn't compound
+
+  const categoryMemory = useMemo(() => {
+    const set = new Set();
+    recipes.forEach((r) => r.ingredients.forEach((i) => i.category && set.add(i.category)));
+    return Array.from(set);
+  }, [recipes]);
+
+  const saveViewedRecipe = (r) => {
+    setRecipes((prev) => prev.map((x) => (x.id === r.id ? r : x)));
+    setViewingRecipe(null);
+  };
 
   const toggleDay = (d) => setSelectedDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
   const toggleExclude = (cat) => setExcludeCategories((prev) => (prev.includes(cat) ? prev.filter((x) => x !== cat) : [...prev, cat]));
@@ -2187,6 +2199,11 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
                           {recipe.babyFriendly && <Baby size={11} color={C.plum} />}
                         </div>
                       )}
+                      {recipe && (
+                        <button onClick={() => setViewingRecipe(recipe)} className="absolute top-1.5 right-6" title="View recipe details">
+                          <Eye size={12} color={C.inkSoft} />
+                        </button>
+                      )}
                       <button onClick={() => removeSlot(dayName, i)} className="absolute top-1.5 right-1.5">
                         <X size={12} color={C.danger} />
                       </button>
@@ -2210,6 +2227,18 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
           message="Removed from the plan"
           onUndo={undoRemoveSlot}
           onExpire={() => setPendingSlotUndo(null)}
+        />
+      )}
+
+      {viewingRecipe && (
+        <RecipeEditor
+          recipe={viewingRecipe}
+          recipes={recipes}
+          categoryMemory={categoryMemory}
+          ingredientCategories={settings.ingredientCategories}
+          babyFriendlyEnabled={settings.babyFriendly?.enabled}
+          onSave={saveViewedRecipe}
+          onClose={() => setViewingRecipe(null)}
         />
       )}
     </div>
@@ -2393,6 +2422,7 @@ export default function PlannerApp({ session }) {
         {tab === "planner" && (
           <PlannerTab
             recipes={recipes}
+            setRecipes={setRecipes}
             settings={settings}
             plan={plan}
             setPlan={setPlan}
