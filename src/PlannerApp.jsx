@@ -2068,7 +2068,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
         <div className="flex flex-wrap items-start gap-4">
           <div>
             <SectionLabel>Days to plan</SectionLabel>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 200 }}>
               {DAYS.map((d) => (
                 <Chip key={d} active={selectedDays.includes(d)} onClick={() => toggleDay(d)}>{d.slice(0, 3)}</Chip>
               ))}
@@ -2107,7 +2107,7 @@ function PlannerTab({ recipes, settings, plan, setPlan, usageHistory, setUsageHi
           </div>
           <div>
             <SectionLabel>This week, avoid</SectionLabel>
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-1.5">
               {["meat", "fish", "dairy"].map((cat) => (
                 <label key={cat} className="flex items-center gap-1.5 text-sm capitalize">
                   <input type="checkbox" checked={excludeCategories.includes(cat)} onChange={() => toggleExclude(cat)} />
