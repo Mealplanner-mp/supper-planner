@@ -1887,7 +1887,15 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
   const [warnings, setWarnings] = useState([]);
   const [pendingSlotUndo, setPendingSlotUndo] = useState(null); // { dayName, index, slot }
   const [viewingRecipe, setViewingRecipe] = useState(null);
+  const [useUpOverflowing, setUseUpOverflowing] = useState(false);
+  const useUpScrollRef = useRef(null);
   const weekBaselineRef = useRef(null); // { weekStart, freezerStock } — snapshot so regenerating doesn't compound
+
+  useEffect(() => {
+    const el = useUpScrollRef.current;
+    if (!el) return;
+    setUseUpOverflowing(el.scrollWidth > el.clientWidth + 1);
+  }, [useUpIngredients, useUpInput]);
 
   const categoryMemory = useMemo(() => {
     const set = new Set();
@@ -2101,69 +2109,72 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
 
   return (
     <div>
-      <Card style={{ marginBottom: 16 }}>
-        <div className="flex flex-wrap items-start">
-          <div className="px-5" style={{ borderRight: `1px solid ${C.line}` }}>
-            <SectionLabel>Days to plan</SectionLabel>
-            <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 270 }}>
-              {DAYS.map((d) => (
-                <Chip key={d} active={selectedDays.includes(d)} onClick={() => toggleDay(d)}>{d.slice(0, 3)}</Chip>
-              ))}
-            </div>
+      <div className="flex flex-wrap items-stretch gap-3" style={{ marginBottom: 16 }}>
+        <div className="rounded-xl" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14 }}>
+          <SectionLabel>Days to plan</SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            {DAYS.map((d) => (
+              <Chip key={d} active={selectedDays.includes(d)} onClick={() => toggleDay(d)}>{d.slice(0, 3)}</Chip>
+            ))}
           </div>
-          <div className="px-5" style={{ borderRight: `1px solid ${C.line}` }}>
-            <SectionLabel>Use up ingredients this week</SectionLabel>
-            <div className="flex gap-2" style={{ width: 260 }}>
+        </div>
+
+        <div className="rounded-xl flex flex-col justify-center" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14, width: 300 }}>
+          <SectionLabel>Use up ingredients this week</SectionLabel>
+          <div className="relative">
+            <div
+              ref={useUpScrollRef}
+              className="no-scrollbar flex items-center gap-1.5 px-2 py-1 rounded-lg overflow-x-auto"
+              style={{ border: `1px solid ${C.line}`, background: C.white, width: "100%" }}
+            >
               <input
-                className="flex-1 px-3 py-2 rounded-lg text-sm"
-                style={{ border: `1px solid ${C.line}` }}
-                placeholder="e.g. spinach"
+                className="text-sm bg-transparent shrink-0"
+                style={{ border: "none", outline: "none", width: 110, padding: 0 }}
+                placeholder={useUpIngredients.length === 0 ? "e.g. spinach" : "Add more…"}
                 value={useUpInput}
                 onChange={(e) => setUseUpInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUseUpIngredient(); } }}
               />
-              <button
-                onClick={addUseUpIngredient}
-                className="px-3 py-2 rounded-lg text-sm font-medium"
-                style={{ border: `1px solid ${C.line}`, color: C.forest }}
-              >
-                Add
-              </button>
-            </div>
-            {useUpIngredients.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto mt-2" style={{ height: 28 }}>
-                {useUpIngredients.map((ing) => (
-                  <span key={ing} className="text-xs px-2 py-1 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
-                    {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="px-5" style={{ borderRight: `1px solid ${C.line}` }}>
-            <SectionLabel>This week, avoid</SectionLabel>
-            <div className="flex flex-col gap-1.5">
-              {["meat", "fish", "dairy"].map((cat) => (
-                <label key={cat} className="flex items-center gap-1.5 text-sm capitalize">
-                  <input type="checkbox" checked={excludeCategories.includes(cat)} onChange={() => toggleExclude(cat)} />
-                  No {cat}
-                </label>
+              {useUpIngredients.map((ing) => (
+                <span key={ing} className="text-xs px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
+                  {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
+                </span>
               ))}
             </div>
-          </div>
-          <div className="px-5 flex flex-col w-full sm:w-auto">
-            <div className="text-xs font-semibold mb-1" style={{ opacity: 0 }} aria-hidden="true">&nbsp;</div>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button onClick={doGenerate} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: C.forest }}>
-                <Calendar size={15} /> Generate
+            {useUpOverflowing && (
+              <button
+                type="button"
+                onClick={() => useUpScrollRef.current?.scrollBy({ left: 100, behavior: "smooth" })}
+                className="absolute top-1/2 -translate-y-1/2 flex items-center"
+                style={{ right: 4, background: "linear-gradient(to right, transparent, #FFFFFF 60%)", paddingLeft: 14, height: "100%", cursor: "pointer" }}
+                title="Scroll for more"
+              >
+                <ChevronRight size={14} color={C.inkSoft} />
               </button>
-              <button onClick={clear} className="flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
-                Clear
-              </button>
-            </div>
+            )}
           </div>
         </div>
-      </Card>
+
+        <div className="rounded-xl" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14 }}>
+          <SectionLabel>This week, avoid</SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            {["meat", "fish", "dairy"].map((cat) => (
+              <Chip key={cat} active={excludeCategories.includes(cat)} onClick={() => toggleExclude(cat)} color={C.rust}>
+                No {cat}
+              </Chip>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 w-full sm:w-auto sm:ml-auto self-center">
+          <button onClick={doGenerate} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: C.forest }}>
+            <Calendar size={15} /> Generate
+          </button>
+          <button onClick={clear} className="flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
+            Clear
+          </button>
+        </div>
+      </div>
 
       {warnings.length > 0 && (
         <Card style={{ marginBottom: 16, background: "#FDECE6", borderColor: C.rust }}>
@@ -2394,6 +2405,9 @@ export default function PlannerApp({ session }) {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${C.line}; border-radius: 5px; }
         ::-webkit-scrollbar-thumb:hover { background: ${C.inkSoft}; }
+
+        .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; height: 0; }
 
         .fade-in { animation: fadeIn .18s ease both; }
         @keyframes fadeIn {
