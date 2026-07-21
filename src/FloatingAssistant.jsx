@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check } from "lucide-react";
+import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check, BookmarkPlus } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const C = {
@@ -14,14 +14,16 @@ const C = {
   danger: "#EF4444",
 };
 
-export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences }) {
+export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences, onRecipeDrafted }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([]); // { role: "user" | "assistant", content: string }
+  const [messages, setMessages] = useState([]); // { role: "user" | "assistant", content: string, forQuestion?: string }
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [prefsDraft, setPrefsDraft] = useState(dietaryPreferences || "");
+  const [draftingIndex, setDraftingIndex] = useState(null);
+  const [draftError, setDraftError] = useState("");
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
       });
       if (error) throw new Error(error.message || "Request failed");
       if (data?.error) throw new Error(data.error);
-      setMessages((prev) => [...prev, { role: "assistant", content: data.answer }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: data.answer, forQuestion: question }]);
     } catch (e) {
       console.error("assistant failed:", e);
       setError(e.message || "Something went wrong — try again.");
@@ -65,6 +67,24 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
     if (!lastUser) return;
     setMessages((prev) => prev.slice(0, -1)); // drop the failed user turn, send() re-adds it
     send(lastUser.content);
+  };
+
+  const saveAsRecipe = async (index, question) => {
+    setDraftError("");
+    setDraftingIndex(index);
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-assistant", {
+        body: { mode: "search", query: question },
+      });
+      if (error) throw new Error(error.message || "Request failed");
+      if (data?.error) throw new Error(data.error);
+      onRecipeDrafted(data.recipe);
+    } catch (e) {
+      console.error("save as recipe failed:", e);
+      setDraftError(e.message || "Couldn't draft that as a recipe — try again.");
+    } finally {
+      setDraftingIndex(null);
+    }
   };
 
   return (
@@ -114,7 +134,7 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
               <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2" style={{ background: C.paper }}>
                 {messages.length === 0 && (
                   <div className="text-xs italic text-center mt-6" style={{ color: C.inkSoft }}>
-                    Ask things like "what can I make with chicken and rice?" or "what goes well with a soup night?"
+                    Ask things like "what can I make with chicken and rice?" or "give me a recipe for lentil soup"
                     {dietaryPreferences && (
                       <div className="mt-2 not-italic" style={{ color: C.forest }}>
                         Remembering: {dietaryPreferences}
@@ -123,16 +143,31 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
                   </div>
                 )}
                 {messages.map((m, i) => (
-                  <div
-                    key={i}
-                    className="text-sm px-3 py-2 rounded-lg max-w-[85%]"
-                    style={
-                      m.role === "user"
-                        ? { background: C.forest, color: "#fff", marginLeft: "auto" }
-                        : { background: C.paperDark, color: C.ink }
-                    }
-                  >
-                    {m.content}
+                  <div key={i} style={m.role === "user" ? {} : { maxWidth: "85%" }}>
+                    <div
+                      className="text-sm px-3 py-2 rounded-lg max-w-[85%]"
+                      style={
+                        m.role === "user"
+                          ? { background: C.forest, color: "#fff", marginLeft: "auto" }
+                          : { background: C.paperDark, color: C.ink }
+                      }
+                    >
+                      {m.content}
+                    </div>
+                    {m.role === "assistant" && (
+                      <button
+                        onClick={() => saveAsRecipe(i, m.forQuestion || m.content)}
+                        disabled={draftingIndex === i}
+                        className="text-xs flex items-center gap-1 mt-1 font-medium"
+                        style={{ color: C.forest, opacity: draftingIndex === i ? 0.6 : 1 }}
+                      >
+                        {draftingIndex === i ? (
+                          <><RefreshCw size={11} className="animate-spin" /> Drafting recipe…</>
+                        ) : (
+                          <><BookmarkPlus size={12} /> Save as recipe</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 ))}
                 {loading && (
@@ -147,6 +182,9 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
                       Retry
                     </button>
                   </div>
+                )}
+                {draftError && (
+                  <div className="text-xs" style={{ color: C.danger }}>{draftError}</div>
                 )}
               </div>
 

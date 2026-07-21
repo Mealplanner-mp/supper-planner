@@ -2284,6 +2284,7 @@ export default function PlannerApp({ session }) {
   const [groceryChecked, setGroceryChecked] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
+  const [assistantDraft, setAssistantDraft] = useState(null);
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -2346,6 +2347,14 @@ export default function PlannerApp({ session }) {
 
   const handleLogout = () => { supabase.auth.signOut(); };
   const dismissWelcome = () => setSettings((s) => ({ ...s, hasSeenWelcome: true }));
+
+  const saveAssistantDraft = (r) => {
+    setRecipes((prev) => {
+      const exists = prev.some((x) => x.id === r.id);
+      return exists ? prev.map((x) => (x.id === r.id ? r : x)) : [...prev, r];
+    });
+    setAssistantDraft(null);
+  };
 
   if (!loaded) {
     return (
@@ -2467,9 +2476,23 @@ export default function PlannerApp({ session }) {
 
       {!settings.hasSeenWelcome && <WelcomeGuide onClose={dismissWelcome} />}
 
+      {assistantDraft && (
+        <RecipeEditor
+          recipe={assistantDraft}
+          recipes={recipes}
+          categoryMemory={categoryMemory}
+          ingredientCategories={settings.ingredientCategories}
+          babyFriendlyEnabled={settings.babyFriendly?.enabled}
+          onSave={saveAssistantDraft}
+          onClose={() => setAssistantDraft(null)}
+          initialAIGenerated={true}
+        />
+      )}
+
       <FloatingAssistant
         dietaryPreferences={settings.dietaryPreferences}
         onSaveDietaryPreferences={(val) => setSettings((s) => ({ ...s, dietaryPreferences: val }))}
+        onRecipeDrafted={(raw) => setAssistantDraft(recipeFromAIDraft(raw))}
       />
     </div>
   );
