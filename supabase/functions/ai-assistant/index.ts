@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { mode, query, image, link, question, history } = await req.json();
+    const { mode, query, image, link, question, history, dietaryPreferences } = await req.json();
 
     if (mode === "search") {
       const promptText = `A home cook is searching for a recipe using this request, which may be a dish name, a description, or a phrase describing what they're in the mood for: "${query}". Find or invent a suitable, realistic home-cook-friendly recipe that fits the request. Respond ONLY with JSON, no markdown fences, no preamble, no explanation — just the JSON object, matching exactly this shape:\n${RECIPE_JSON_SHAPE}`;
@@ -98,7 +98,10 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "ask") {
-      const system = "You are a friendly, concise home-cooking assistant inside a meal-planning app called Plan to Dish. Give short, practical, conversational answers — a few sentences or a short list. Don't write out a full recipe unless the user explicitly asks for one.";
+      let system = "You are a friendly, concise home-cooking assistant inside a meal-planning app called Plan to Dish. Give short, practical, conversational answers — a few sentences or a short list. Don't write out a full recipe unless the user explicitly asks for one.";
+      if (dietaryPreferences && String(dietaryPreferences).trim()) {
+        system += ` The user has the following dietary preferences/restrictions — always keep them in mind and tailor every answer to fit: ${String(dietaryPreferences).trim()}.`;
+      }
       const messages = [...(history || []), { role: "user", content: question }];
       const text = await callClaude({ messages, system, maxTokens: 500 });
       return new Response(JSON.stringify({ answer: text }), {

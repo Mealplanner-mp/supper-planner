@@ -2467,7 +2467,10 @@ export default function PlannerApp({ session }) {
 
       {!settings.hasSeenWelcome && <WelcomeGuide onClose={dismissWelcome} />}
 
-      <FloatingAssistant />
+      <FloatingAssistant
+        dietaryPreferences={settings.dietaryPreferences}
+        onSaveDietaryPreferences={(val) => setSettings((s) => ({ ...s, dietaryPreferences: val }))}
+      />
     </div>
   );
 }

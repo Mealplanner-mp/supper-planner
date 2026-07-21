@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, RefreshCw } from "lucide-react";
+import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const C = {
@@ -14,17 +14,28 @@ const C = {
   danger: "#EF4444",
 };
 
-export default function FloatingAssistant() {
+export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]); // { role: "user" | "assistant", content: string }
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefsDraft, setPrefsDraft] = useState(dietaryPreferences || "");
   const scrollRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, open]);
+
+  useEffect(() => {
+    setPrefsDraft(dietaryPreferences || "");
+  }, [dietaryPreferences]);
+
+  const savePrefs = () => {
+    onSaveDietaryPreferences(prefsDraft.trim());
+    setPrefsOpen(false);
+  };
 
   const send = async (textOverride) => {
     const question = (textOverride ?? input).trim();
@@ -36,7 +47,7 @@ export default function FloatingAssistant() {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("ai-assistant", {
-        body: { mode: "ask", question, history },
+        body: { mode: "ask", question, history, dietaryPreferences },
       });
       if (error) throw new Error(error.message || "Request failed");
       if (data?.error) throw new Error(data.error);
@@ -67,62 +78,99 @@ export default function FloatingAssistant() {
             <span className="text-sm font-semibold text-white" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Ask about cooking
             </span>
-            <button onClick={() => setOpen(false)}><X size={16} color="#fff" /></button>
+            <div className="flex items-center gap-2.5">
+              <button onClick={() => setPrefsOpen((o) => !o)} title="Dietary preferences">
+                <SettingsIcon size={15} color="#fff" />
+              </button>
+              <button onClick={() => setOpen(false)}><X size={16} color="#fff" /></button>
+            </div>
           </div>
 
-          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2" style={{ background: C.paper }}>
-            {messages.length === 0 && (
-              <div className="text-xs italic text-center mt-6" style={{ color: C.inkSoft }}>
-                Ask things like "what can I make with chicken and rice?" or "what goes well with a soup night?"
+          {prefsOpen ? (
+            <div className="flex-1 min-h-0 flex flex-col p-3" style={{ background: C.paper }}>
+              <div className="text-xs font-semibold uppercase mb-1" style={{ color: C.forest, letterSpacing: "0.05em" }}>
+                Dietary preferences
               </div>
-            )}
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className="text-sm px-3 py-2 rounded-lg max-w-[85%]"
-                style={
-                  m.role === "user"
-                    ? { background: C.forest, color: "#fff", marginLeft: "auto" }
-                    : { background: C.paperDark, color: C.ink }
-                }
+              <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+                Tell the assistant about any diets, allergies, or things to avoid — it'll remember this for every answer until you change it.
+              </div>
+              <textarea
+                className="flex-1 px-3 py-2 rounded-lg text-sm resize-none"
+                style={{ border: `1px solid ${C.line}` }}
+                placeholder="e.g. vegetarian, no nuts, low sodium"
+                value={prefsDraft}
+                onChange={(e) => setPrefsDraft(e.target.value)}
+              />
+              <button
+                onClick={savePrefs}
+                className="w-full mt-2 py-2 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
+                style={{ background: C.forest }}
               >
-                {m.content}
+                <Check size={14} /> Save preferences
+              </button>
+            </div>
+          ) : (
+            <>
+              <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2" style={{ background: C.paper }}>
+                {messages.length === 0 && (
+                  <div className="text-xs italic text-center mt-6" style={{ color: C.inkSoft }}>
+                    Ask things like "what can I make with chicken and rice?" or "what goes well with a soup night?"
+                    {dietaryPreferences && (
+                      <div className="mt-2 not-italic" style={{ color: C.forest }}>
+                        Remembering: {dietaryPreferences}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {messages.map((m, i) => (
+                  <div
+                    key={i}
+                    className="text-sm px-3 py-2 rounded-lg max-w-[85%]"
+                    style={
+                      m.role === "user"
+                        ? { background: C.forest, color: "#fff", marginLeft: "auto" }
+                        : { background: C.paperDark, color: C.ink }
+                    }
+                  >
+                    {m.content}
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}>
+                    <RefreshCw size={12} className="animate-spin" /> Thinking…
+                  </div>
+                )}
+                {error && (
+                  <div className="text-xs flex items-center gap-2" style={{ color: C.danger }}>
+                    <span>{error}</span>
+                    <button onClick={retryLast} className="underline font-medium" style={{ color: C.forest }}>
+                      Retry
+                    </button>
+                  </div>
+                )}
               </div>
-            ))}
-            {loading && (
-              <div className="flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}>
-                <RefreshCw size={12} className="animate-spin" /> Thinking…
-              </div>
-            )}
-            {error && (
-              <div className="text-xs flex items-center gap-2" style={{ color: C.danger }}>
-                <span>{error}</span>
-                <button onClick={retryLast} className="underline font-medium" style={{ color: C.forest }}>
-                  Retry
+
+              <div className="shrink-0 flex items-center gap-2 p-2.5" style={{ borderTop: `1px solid ${C.line}` }}>
+                <input
+                  className="flex-1 px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${C.line}` }}
+                  placeholder="Ask a cooking question…"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !loading) { e.preventDefault(); send(); } }}
+                />
+                <button
+                  onClick={() => send()}
+                  disabled={loading || !input.trim()}
+                  className="p-2 rounded-lg text-white shrink-0"
+                  style={{ background: C.forest, opacity: loading || !input.trim() ? 0.6 : 1 }}
+                  title="Send"
+                >
+                  <Send size={16} />
                 </button>
               </div>
-            )}
-          </div>
-
-          <div className="shrink-0 flex items-center gap-2 p-2.5" style={{ borderTop: `1px solid ${C.line}` }}>
-            <input
-              className="flex-1 px-3 py-2 rounded-lg text-sm"
-              style={{ border: `1px solid ${C.line}` }}
-              placeholder="Ask a cooking question…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !loading) { e.preventDefault(); send(); } }}
-            />
-            <button
-              onClick={() => send()}
-              disabled={loading || !input.trim()}
-              className="p-2 rounded-lg text-white shrink-0"
-              style={{ background: C.forest, opacity: loading || !input.trim() ? 0.6 : 1 }}
-              title="Send"
-            >
-              <Send size={16} />
-            </button>
-          </div>
+            </>
+          )}
         </div>
       )}
 
