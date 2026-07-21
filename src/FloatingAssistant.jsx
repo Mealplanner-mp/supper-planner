@@ -97,7 +97,7 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
               <textarea
                 className="flex-1 px-3 py-2 rounded-lg text-sm resize-none"
                 style={{ border: `1px solid ${C.line}` }}
-                placeholder="e.g. vegetarian, no nuts, low sodium"
+                placeholder="e.g. Kosher, vegetarian, no nuts, low sodium"
                 value={prefsDraft}
                 onChange={(e) => setPrefsDraft(e.target.value)}
               />
