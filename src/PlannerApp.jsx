@@ -2102,8 +2102,8 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
-        <div className="flex flex-wrap items-start justify-center gap-8">
-          <div>
+        <div className="flex flex-wrap items-start">
+          <div className="px-5" style={{ borderRight: `1px solid ${C.line}` }}>
             <SectionLabel>Days to plan</SectionLabel>
             <div className="flex flex-wrap gap-1.5" style={{ maxWidth: 270 }}>
               {DAYS.map((d) => (
@@ -2111,7 +2111,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
               ))}
             </div>
           </div>
-          <div style={{ width: 260 }}>
+          <div className="px-5" style={{ width: 260, borderRight: `1px solid ${C.line}` }}>
             <SectionLabel>Use up ingredients this week</SectionLabel>
             <div className="flex gap-2">
               <input
@@ -2140,7 +2140,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
               </div>
             )}
           </div>
-          <div style={{ marginLeft: 16 }}>
+          <div className="px-5" style={{ borderRight: `1px solid ${C.line}` }}>
             <SectionLabel>This week, avoid</SectionLabel>
             <div className="flex flex-col gap-1.5">
               {["meat", "fish", "dairy"].map((cat) => (
@@ -2151,7 +2151,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
               ))}
             </div>
           </div>
-          <div className="flex flex-col w-full sm:w-auto">
+          <div className="px-5 flex flex-col w-full sm:w-auto">
             <div className="text-xs font-semibold mb-1" style={{ opacity: 0 }} aria-hidden="true">&nbsp;</div>
             <div className="flex gap-2 w-full sm:w-auto">
               <button onClick={doGenerate} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: C.forest }}>
