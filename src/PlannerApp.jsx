@@ -2111,7 +2111,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
               ))}
             </div>
           </div>
-          <div className="px-5" style={{ width: 260, borderRight: `1px solid ${C.line}` }}>
+          <div className="px-5" style={{ width: 300, borderRight: `1px solid ${C.line}` }}>
             <SectionLabel>Use up ingredients this week</SectionLabel>
             <div className="flex gap-2">
               <input
