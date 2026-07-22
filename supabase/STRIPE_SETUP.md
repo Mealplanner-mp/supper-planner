@@ -24,10 +24,21 @@ the Payment Link is the actual shareable checkout page. Do this once per plan:
    email address"** — the webhook depends on this to identify who paid.
 4. Open **Advanced options** → **Metadata** → add a row with key `tier` and
    value `basic` (exactly that, lowercase).
-5. Click **Create link** (top right). Copy the resulting URL
+5. Still in **Advanced options**, find **"After payment"** and switch it from
+   the default "Show a confirmation page" to **"Don't show confirmation page"
+   / redirect to your website**, then enter:
+   `https://plantodish.com/?checkout=success`
+   This is what lets the app pick back up automatically in the same tab
+   instead of leaving the customer stranded on Stripe's page — see the
+   `confirmingPayment` polling logic in `src/App.jsx`.
+6. Click **Create link** (top right). Copy the resulting URL
    (looks like `https://buy.stripe.com/xxxxxxxx`).
-6. Repeat steps 1–5 for the **"Pro"** product, using metadata value `pro`
-   instead of `basic`.
+7. Repeat steps 1–6 for the **"Pro"** product, using metadata value `pro`
+   instead of `basic` (the redirect URL is the same for both).
+
+If you already created both links before adding this — same deal as with
+metadata, just **Edit** each existing link and add the redirect under
+Advanced options → After payment.
 
 ## 3. Paste both links into the code
 

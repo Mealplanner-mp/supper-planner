@@ -104,8 +104,6 @@ export default function Pricing({ mode = "trial_expired", userEmail, currentTier
               ) : url ? (
                 <a
                   href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="text-center text-sm font-medium text-white py-2 rounded-lg"
                   style={{ background: plan.highlighted ? C.forest : C.ink }}
                 >
