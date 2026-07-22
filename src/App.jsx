@@ -7,8 +7,9 @@ import ResetPassword from "./ResetPassword.jsx";
 
 const TRIAL_DAYS = 7;
 const CHECKOUT_PARAM = "checkout";
-const POLL_INTERVAL_MS = 2000;
-const POLL_MAX_ATTEMPTS = 20; // ~40s — the webhook usually lands in a couple of seconds
+const SESSION_PARAM = "session_id";
+const POLL_INTERVAL_MS = 1000;
+const POLL_MAX_ATTEMPTS = 5; // ~5s fallback, only used if verify-checkout can't run
 
 async function ensureUserProvisioned(user) {
   const username = (user.email || user.id).split("@")[0];
@@ -51,10 +52,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Right after a Stripe redirect (see Pricing.jsx's Payment Links → "After
-// payment" setting), the webhook that flips is_paid may not have landed yet.
-// Poll briefly instead of showing the paywall for an account that actually
-// just paid.
+// Fallback only — used if verify-checkout can't run (no session_id on the
+// URL, or the call itself fails). Polls briefly for the stripe-webhook to
+// land instead of immediately showing the paywall for an account that
+// actually just paid.
 async function waitForPaymentConfirmation(userId) {
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     const status = await loadAccountStatus(userId);
@@ -64,9 +65,23 @@ async function waitForPaymentConfirmation(userId) {
   return loadAccountStatus(userId);
 }
 
-function stripCheckoutParam() {
+// Verifies the just-completed Stripe session directly (see each Payment
+// Link's "After payment" redirect: .../?checkout=success&session_id=
+// {CHECKOUT_SESSION_ID}) instead of waiting on the webhook — resolves in one
+// request instead of a poll.
+async function verifyCheckoutSession(sessionId) {
+  const { data, error } = await supabase.functions.invoke("verify-checkout", { body: { sessionId } });
+  if (error || data?.error) {
+    console.error("verify-checkout failed", error || data.error);
+    return null;
+  }
+  return data;
+}
+
+function stripCheckoutParams() {
   const url = new URL(window.location.href);
   url.searchParams.delete(CHECKOUT_PARAM);
+  url.searchParams.delete(SESSION_PARAM);
   window.history.replaceState({}, "", url.pathname + url.search + url.hash);
 }
 
@@ -91,12 +106,15 @@ export default function App() {
     if (session?.user && !provisioned) {
       (async () => {
         await ensureUserProvisioned(session.user);
-        const justCheckedOut = new URLSearchParams(window.location.search).get(CHECKOUT_PARAM) === "success";
+        const params = new URLSearchParams(window.location.search);
+        const justCheckedOut = params.get(CHECKOUT_PARAM) === "success";
+        const sessionId = params.get(SESSION_PARAM);
         let status;
         if (justCheckedOut) {
           setConfirmingPayment(true);
-          status = await waitForPaymentConfirmation(session.user.id);
-          stripCheckoutParam();
+          const verified = sessionId ? await verifyCheckoutSession(sessionId) : null;
+          status = verified?.isPaid ? await loadAccountStatus(session.user.id) : await waitForPaymentConfirmation(session.user.id);
+          stripCheckoutParams();
           setConfirmingPayment(false);
         } else {
           status = await loadAccountStatus(session.user.id);

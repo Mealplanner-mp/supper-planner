@@ -27,10 +27,11 @@ the Payment Link is the actual shareable checkout page. Do this once per plan:
 5. Still in **Advanced options**, find **"After payment"** and switch it from
    the default "Show a confirmation page" to **"Don't show confirmation page"
    / redirect to your website**, then enter:
-   `https://plantodish.com/?checkout=success`
-   This is what lets the app pick back up automatically in the same tab
-   instead of leaving the customer stranded on Stripe's page — see the
-   `confirmingPayment` polling logic in `src/App.jsx`.
+   `https://plantodish.com/?checkout=success&session_id={CHECKOUT_SESSION_ID}`
+   Stripe replaces `{CHECKOUT_SESSION_ID}` with the real session ID at
+   redirect time. The app uses it to verify the payment directly via the
+   `verify-checkout` function (near-instant), instead of waiting on the
+   webhook — see `src/App.jsx`.
 6. Click **Create link** (top right). Copy the resulting URL
    (looks like `https://buy.stripe.com/xxxxxxxx`).
 7. Repeat steps 1–6 for the **"Pro"** product, using metadata value `pro`
@@ -78,12 +79,17 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ...
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase Dashboard → Project Settings → API → `service_role` secret
 - `STRIPE_WEBHOOK_SECRET`: you'll get this in step 9, after creating the webhook endpoint
 
-## 8. Deploy the function
+## 8. Deploy the functions
 
 ```
 supabase functions deploy stripe-webhook --no-verify-jwt
+supabase functions deploy verify-checkout
 ```
-This prints the function's URL, something like:
+(`verify-checkout` keeps JWT verification ON — it's the function the app
+calls right after redirect to confirm payment instantly, and it must only
+be callable by a logged-in user.)
+
+The first command prints the webhook's URL, something like:
 `https://skwqwfoixwvouvbzdtft.supabase.co/functions/v1/stripe-webhook`
 
 ## 9. Create the Stripe webhook endpoint
