@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import Auth from "./Auth.jsx";
 import PlannerApp from "./PlannerApp.jsx";
-import Paywall from "./Paywall.jsx";
+import Pricing from "./Pricing.jsx";
 import ResetPassword from "./ResetPassword.jsx";
 
 const TRIAL_DAYS = 7;
@@ -12,7 +12,7 @@ async function ensureUserProvisioned(user) {
 
   const { error: profileError } = await supabase
     .from("profiles")
-    .upsert({ id: user.id, username }, { onConflict: "id", ignoreDuplicates: true });
+    .upsert({ id: user.id, username, email: user.email }, { onConflict: "id", ignoreDuplicates: true });
   if (profileError) console.error("profile provisioning failed", profileError);
 
   const { error: plannerError } = await supabase
@@ -29,21 +29,25 @@ function LoadingScreen({ label }) {
   );
 }
 
-async function checkTrialExpired(userId) {
+async function loadAccountStatus(userId) {
   const { data, error } = await supabase
     .from("profiles")
-    .select("created_at, is_paid")
+    .select("created_at, is_paid, tier")
     .eq("id", userId)
     .single();
-  if (error || !data || data.is_paid) return false;
+  if (error || !data) return { trialExpired: false, isPaid: false, tier: null };
   const daysSince = (Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24);
-  return daysSince >= TRIAL_DAYS;
+  return {
+    trialExpired: !data.is_paid && daysSince >= TRIAL_DAYS,
+    isPaid: data.is_paid,
+    tier: data.tier,
+  };
 }
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
   const [provisioned, setProvisioned] = useState(false);
-  const [trialExpired, setTrialExpired] = useState(false);
+  const [account, setAccount] = useState({ trialExpired: false, isPaid: false, tier: null });
   const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
@@ -59,8 +63,8 @@ export default function App() {
   useEffect(() => {
     if (session?.user && !provisioned) {
       ensureUserProvisioned(session.user)
-        .then(() => checkTrialExpired(session.user.id))
-        .then((expired) => setTrialExpired(expired))
+        .then(() => loadAccountStatus(session.user.id))
+        .then((status) => setAccount(status))
         .then(() => setProvisioned(true));
     }
   }, [session, provisioned]);
@@ -69,7 +73,11 @@ export default function App() {
   if (passwordRecovery) return <ResetPassword onDone={() => setPasswordRecovery(false)} />;
   if (!session) return <Auth />;
   if (!provisioned) return <LoadingScreen label="setting up your account…" />;
-  if (trialExpired) return <Paywall />;
+  if (account.trialExpired) return <Pricing mode="trial_expired" userEmail={session.user.email} />;
 
-  return <PlannerApp session={session} />;
+  // Grandfathered paid accounts (is_paid set manually, no tier chosen) get full access,
+  // same as active trials — only an explicit "basic" tier restricts Pro features.
+  const hasProAccess = !account.isPaid || !account.tier || account.tier === "pro";
+
+  return <PlannerApp session={session} tier={account.tier} isPaid={account.isPaid} hasProAccess={hasProAccess} />;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check, BookmarkPlus } from "lucide-react";
+import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check, BookmarkPlus, Sparkles } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const C = {
@@ -14,7 +14,7 @@ const C = {
   danger: "#EF4444",
 };
 
-export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences, onRecipeDrafted }) {
+export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences, onRecipeDrafted, locked, onUpgradeClick }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]); // { role: "user" | "assistant", content: string, forQuestion?: string }
   const [input, setInput] = useState("");
@@ -99,14 +99,38 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
               Ask about cooking
             </span>
             <div className="flex items-center gap-2.5">
-              <button onClick={() => setPrefsOpen((o) => !o)} title="Dietary preferences">
-                <SettingsIcon size={15} color="#fff" />
-              </button>
+              {!locked && (
+                <button onClick={() => setPrefsOpen((o) => !o)} title="Dietary preferences">
+                  <SettingsIcon size={15} color="#fff" />
+                </button>
+              )}
               <button onClick={() => setOpen(false)}><X size={16} color="#fff" /></button>
             </div>
           </div>
 
-          {prefsOpen ? (
+          {locked ? (
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center p-5" style={{ background: C.paper }}>
+              <div
+                className="flex items-center justify-center rounded-full mb-3"
+                style={{ width: 40, height: 40, background: C.forest }}
+              >
+                <Sparkles size={19} color="#fff" />
+              </div>
+              <div className="text-sm font-semibold mb-1" style={{ color: C.ink, fontFamily: "'Poppins', sans-serif" }}>
+                AI assistant is a Pro feature
+              </div>
+              <div className="text-xs mb-4" style={{ color: C.inkSoft }}>
+                Upgrade to ask cooking questions and save answers straight to your recipe box.
+              </div>
+              <button
+                onClick={onUpgradeClick}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                style={{ background: C.forest }}
+              >
+                Upgrade to Pro
+              </button>
+            </div>
+          ) : prefsOpen ? (
             <div className="flex-1 min-h-0 flex flex-col p-3" style={{ background: C.paper }}>
               <div className="text-xs font-semibold uppercase mb-1" style={{ color: C.forest, letterSpacing: "0.05em" }}>
                 Dietary preferences

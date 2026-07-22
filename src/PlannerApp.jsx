@@ -4,11 +4,12 @@ import {
   ChevronDown, ChevronRight, Search, RefreshCw, Calendar, ShoppingCart,
   Settings as SettingsIcon, BookOpen, Download, AlertTriangle, Check,
   GripVertical, Clock, Copy, Printer, LogOut, Baby, Sparkles, Upload,
-  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye
+  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye, LifeBuoy
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
 import FloatingAssistant from "./FloatingAssistant.jsx";
+import Pricing from "./Pricing.jsx";
 import WelcomeGuide from "./WelcomeGuide.jsx";
 
 /* ---------------------------------------------------------------------- */
@@ -777,7 +778,7 @@ function BabyFriendlyListModal({ recipes, setRecipes, onClose }) {
 /* ---------------------------------------------------------------------- */
 /* New recipe: choose manual vs upload                                    */
 /* ---------------------------------------------------------------------- */
-function NewRecipeChooser({ onManual, onUpload, onClose }) {
+function NewRecipeChooser({ onManual, onUpload, onClose, uploadLocked }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 py-8 overflow-y-auto" style={{ background: "rgba(46,42,34,0.55)" }} onClick={onClose}>
       <div className="pop-in rounded-2xl w-full max-w-sm p-5 my-auto" style={{ background: C.paper, border: `1px solid ${C.line}` }} onClick={(e) => e.stopPropagation()}>
@@ -790,7 +791,15 @@ function NewRecipeChooser({ onManual, onUpload, onClose }) {
             <PenLine size={22} color={C.forest} />
             <span className="text-sm font-medium" style={{ color: C.ink }}>Add manually</span>
           </button>
-          <button onClick={onUpload} className="flex flex-col items-center gap-2 py-6 rounded-xl transition-colors" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+          <button onClick={onUpload} className="relative flex flex-col items-center gap-2 py-6 rounded-xl transition-colors" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+            {uploadLocked && (
+              <span
+                className="absolute top-1.5 right-1.5 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded-full text-white"
+                style={{ background: C.forest, letterSpacing: "0.04em" }}
+              >
+                Pro
+              </span>
+            )}
             <Upload size={22} color={C.forest} />
             <span className="text-sm font-medium" style={{ color: C.ink }}>Upload photo / link</span>
           </button>
@@ -898,7 +907,7 @@ function UploadRecipeModal({ onDraft, onClose }) {
 /* ---------------------------------------------------------------------- */
 /* Recipes Tab                                                            */
 /* ---------------------------------------------------------------------- */
-function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories, babyFriendlyEnabled }) {
+function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories, babyFriendlyEnabled, canUpload, onUpgradeClick }) {
   const [editing, setEditing] = useState(null);
   const [editingAIGenerated, setEditingAIGenerated] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -971,6 +980,7 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
   };
   const openUpload = () => {
     setChooserOpen(false);
+    if (!canUpload) { onUpgradeClick(); return; }
     setUploadOpen(true);
   };
   const handleUploadDraft = (parsed) => {
@@ -1074,7 +1084,7 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
       )}
 
       {chooserOpen && (
-        <NewRecipeChooser onManual={openManual} onUpload={openUpload} onClose={() => setChooserOpen(false)} />
+        <NewRecipeChooser onManual={openManual} onUpload={openUpload} onClose={() => setChooserOpen(false)} uploadLocked={!canUpload} />
       )}
 
       {uploadOpen && (
@@ -2284,7 +2294,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
 /* ---------------------------------------------------------------------- */
 /* Main App                                                                */
 /* ---------------------------------------------------------------------- */
-export default function PlannerApp({ session }) {
+export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
   const userId = session.user.id;
   const [tab, setTab] = useState("planner");
   const [recipes, setRecipes] = useState([]);
@@ -2296,6 +2306,7 @@ export default function PlannerApp({ session }) {
   const [loaded, setLoaded] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [assistantDraft, setAssistantDraft] = useState(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -2448,13 +2459,32 @@ export default function PlannerApp({ session }) {
             </div>
             <SavePulse show={showSaved} />
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
-            style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}
-          >
-            <LogOut size={14} /> Log out
-          </button>
+          <div className="flex items-center gap-2">
+            {isPaid && tier === "basic" && (
+              <button
+                onClick={() => setShowUpgrade(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
+                style={{ background: C.forest }}
+              >
+                Upgrade to Pro
+              </button>
+            )}
+            <a
+              href="mailto:support@plantodish.com"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+              style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}
+              title="Email support@plantodish.com"
+            >
+              <LifeBuoy size={14} /> Support
+            </a>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+              style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}
+            >
+              <LogOut size={14} /> Log out
+            </button>
+          </div>
         </div>
         <div className="mb-3" />
 
@@ -2467,7 +2497,7 @@ export default function PlannerApp({ session }) {
       </div>
 
       <div className="px-3 sm:px-6 py-6 max-w-7xl mx-auto" style={{ background: C.paper }}>
-        {tab === "recipes" && <RecipesTab recipes={recipes} setRecipes={setRecipes} categoryMemory={categoryMemory} ingredientCategories={settings.ingredientCategories} babyFriendlyEnabled={settings.babyFriendly?.enabled} />}
+        {tab === "recipes" && <RecipesTab recipes={recipes} setRecipes={setRecipes} categoryMemory={categoryMemory} ingredientCategories={settings.ingredientCategories} babyFriendlyEnabled={settings.babyFriendly?.enabled} canUpload={hasProAccess} onUpgradeClick={() => setShowUpgrade(true)} />}
         {tab === "grocery" && (
           <GroceryListTab plan={plan} recipes={recipes} settings={settings} groceryChecked={groceryChecked} setGroceryChecked={setGroceryChecked} />
         )}
@@ -2503,10 +2533,16 @@ export default function PlannerApp({ session }) {
         />
       )}
 
+      {showUpgrade && (
+        <Pricing mode="upgrade" userEmail={session.user.email} currentTier={tier} onClose={() => setShowUpgrade(false)} />
+      )}
+
       <FloatingAssistant
         dietaryPreferences={settings.dietaryPreferences}
         onSaveDietaryPreferences={(val) => setSettings((s) => ({ ...s, dietaryPreferences: val }))}
         onRecipeDrafted={(raw) => setAssistantDraft(recipeFromAIDraft(raw))}
+        locked={!hasProAccess}
+        onUpgradeClick={() => setShowUpgrade(true)}
       />
     </div>
   );

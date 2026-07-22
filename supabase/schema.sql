@@ -11,10 +11,14 @@ create table if not exists profiles (
   status text not null default 'active', -- 'active' | 'suspended'
   beta_cohort text,                      -- e.g. 'beta-1', for your own tracking
   is_paid boolean not null default false, -- flip to true yourself once payment is confirmed
+  tier text,                             -- 'basic' | 'pro' | null (null = grandfathered/full access once is_paid)
+  email text,                            -- mirrors auth.users.email so the Stripe webhook can match by email
   created_at timestamptz default now()   -- also doubles as the free-trial start date
 );
 
 alter table profiles add column if not exists is_paid boolean not null default false;
+alter table profiles add column if not exists tier text;
+alter table profiles add column if not exists email text;
 
 alter table profiles enable row level security;
 
