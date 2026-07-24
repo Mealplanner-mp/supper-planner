@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, RefreshCw, Settings as SettingsIcon, Check, BookmarkPlus, Sparkles } from "lucide-react";
+import { MessageCircle, X, Send, RefreshCw, BookmarkPlus, Sparkles } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 const C = {
@@ -14,14 +14,19 @@ const C = {
   danger: "#EF4444",
 };
 
-export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPreferences, onRecipeDrafted, locked, onUpgradeClick }) {
+export default function FloatingAssistant({ userId, dietaryPreferences, onRecipeDrafted, locked, onUpgradeClick }) {
+  const storageKey = `chat_${userId}`;
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([]); // { role: "user" | "assistant", content: string, forQuestion?: string }
+  const [messages, setMessages] = useState(() => { // { role: "user" | "assistant", content: string, forQuestion?: string }
+    try {
+      return JSON.parse(localStorage.getItem(storageKey)) || [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [prefsOpen, setPrefsOpen] = useState(false);
-  const [prefsDraft, setPrefsDraft] = useState(dietaryPreferences || "");
   const [draftingIndex, setDraftingIndex] = useState(null);
   const [draftError, setDraftError] = useState("");
   const scrollRef = useRef(null);
@@ -31,13 +36,8 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
   }, [messages, open]);
 
   useEffect(() => {
-    setPrefsDraft(dietaryPreferences || "");
-  }, [dietaryPreferences]);
-
-  const savePrefs = () => {
-    onSaveDietaryPreferences(prefsDraft.trim());
-    setPrefsOpen(false);
-  };
+    localStorage.setItem(storageKey, JSON.stringify(messages));
+  }, [messages, storageKey]);
 
   const send = async (textOverride) => {
     const question = (textOverride ?? input).trim();
@@ -99,11 +99,6 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
               Ask about cooking
             </span>
             <div className="flex items-center gap-2.5">
-              {!locked && (
-                <button onClick={() => setPrefsOpen((o) => !o)} title="Dietary preferences">
-                  <SettingsIcon size={15} color="#fff" />
-                </button>
-              )}
               <button onClick={() => setOpen(false)}><X size={16} color="#fff" /></button>
             </div>
           </div>
@@ -128,29 +123,6 @@ export default function FloatingAssistant({ dietaryPreferences, onSaveDietaryPre
                 style={{ background: C.forest }}
               >
                 Upgrade to Pro
-              </button>
-            </div>
-          ) : prefsOpen ? (
-            <div className="flex-1 min-h-0 flex flex-col p-3" style={{ background: C.paper }}>
-              <div className="text-xs font-semibold uppercase mb-1" style={{ color: C.forest, letterSpacing: "0.05em" }}>
-                Dietary preferences
-              </div>
-              <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-                Tell the assistant about any diets, allergies, or things to avoid — it'll remember this for every answer until you change it.
-              </div>
-              <textarea
-                className="flex-1 px-3 py-2 rounded-lg text-sm resize-none"
-                style={{ border: `1px solid ${C.line}` }}
-                placeholder="e.g. Kosher, vegetarian, no nuts, low sodium"
-                value={prefsDraft}
-                onChange={(e) => setPrefsDraft(e.target.value)}
-              />
-              <button
-                onClick={savePrefs}
-                className="w-full mt-2 py-2 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
-                style={{ background: C.forest }}
-              >
-                <Check size={14} /> Save preferences
               </button>
             </div>
           ) : (

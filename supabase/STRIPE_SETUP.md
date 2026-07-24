@@ -84,10 +84,10 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ...
 ```
 supabase functions deploy stripe-webhook --no-verify-jwt
 supabase functions deploy verify-checkout
+supabase functions deploy billing-portal
 ```
-(`verify-checkout` keeps JWT verification ON — it's the function the app
-calls right after redirect to confirm payment instantly, and it must only
-be callable by a logged-in user.)
+(`verify-checkout` and `billing-portal` both keep JWT verification ON — only
+a logged-in user can call them, for their own account.)
 
 The first command prints the webhook's URL, something like:
 `https://skwqwfoixwvouvbzdtft.supabase.co/functions/v1/stripe-webhook`
@@ -103,7 +103,15 @@ Stripe Dashboard → Developers → Webhooks → **Add endpoint**.
 - After creating it, click into the endpoint and reveal the **Signing
   secret** (`whsec_...`) — set that as `STRIPE_WEBHOOK_SECRET` (step 7).
 
-## 10. Test it
+## 10. Turn on the Customer Portal (for "Manage payment method")
+
+Stripe Dashboard → **Settings → Billing → Customer portal** → click
+**Activate**. The defaults are fine (update payment method, view invoices);
+adjust cancellation/plan-switching options there if you want to restrict
+them. Without this activated, the "Manage payment method" button on the
+account page will fail.
+
+## 11. Test it
 
 Use Stripe test mode with a test Payment Link + test card
 `4242 4242 4242 4242`, checking out while logged into the app as an
@@ -126,3 +134,9 @@ to the right existing account without a fully custom Checkout Session flow.
 - Manually flipping `is_paid = true` in the Supabase dashboard (no `tier`
   set) grandfathers that account into full access, including the AI
   assistant and recipe uploads — see the `hasProAccess` check in `src/App.jsx`.
+- Anyone who paid *before* `stripe_customer_id` capture was added (this
+  update) won't have it backfilled automatically — their "Manage payment
+  method" button will show "No billing account on file yet" until their
+  next payment. If needed, backfill manually: find their Stripe Customer ID
+  (Stripe Dashboard → Customers → search by email) and set it on their
+  `profiles` row via Supabase Table Editor.

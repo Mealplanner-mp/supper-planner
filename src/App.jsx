@@ -19,6 +19,13 @@ async function ensureUserProvisioned(user) {
     .upsert({ id: user.id, username, email: user.email }, { onConflict: "id", ignoreDuplicates: true });
   if (profileError) console.error("profile provisioning failed", profileError);
 
+  // ignoreDuplicates above means the upsert above only ever fires once, on
+  // first login — it won't touch email again after that. Keep profiles.email
+  // in sync on every login too (e.g. after a confirmed email change from the
+  // account page), without touching username.
+  const { error: emailSyncError } = await supabase.from("profiles").update({ email: user.email }).eq("id", user.id);
+  if (emailSyncError) console.error("profile email sync failed", emailSyncError);
+
   const { error: plannerError } = await supabase
     .from("planner_data")
     .upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: true });
@@ -96,8 +103,15 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      setSession(newSession);
-      setProvisioned(false);
+      // Supabase silently fires an auth event (token refresh) whenever the
+      // browser tab regains focus, even for the same already-signed-in user.
+      // Only reset provisioning — which unmounts/remounts PlannerApp — on an
+      // actual sign-in/sign-out, not on every one of those background pings,
+      // or switching back to this tab would reset the whole app each time.
+      setSession((prevSession) => {
+        if (prevSession?.user?.id !== newSession?.user?.id) setProvisioned(false);
+        return newSession;
+      });
     });
     return () => listener.subscription.unsubscribe();
   }, []);

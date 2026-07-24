@@ -69,6 +69,9 @@ Deno.serve(async (req) => {
     } else {
       console.error("checkout session completed with missing/unknown tier metadata", session.id, tier);
     }
+    if (session.customer) {
+      patch.stripe_customer_id = typeof session.customer === "string" ? session.customer : session.customer.id;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("profiles")

@@ -4,13 +4,15 @@ import {
   ChevronDown, ChevronRight, Search, RefreshCw, Calendar, ShoppingCart,
   Settings as SettingsIcon, BookOpen, Download, AlertTriangle, Check,
   GripVertical, Clock, Copy, Printer, LogOut, Baby, Sparkles, Upload,
-  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye, LifeBuoy
+  ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye,
+  User
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
 import FloatingAssistant from "./FloatingAssistant.jsx";
 import Pricing from "./Pricing.jsx";
 import WelcomeGuide from "./WelcomeGuide.jsx";
+import Account from "./Account.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Design tokens (see inline <style> below for fonts + card texture)      */
@@ -2307,6 +2309,7 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
   const [showSaved, setShowSaved] = useState(false);
   const [assistantDraft, setAssistantDraft] = useState(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -2460,6 +2463,14 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
             <SavePulse show={showSaved} />
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAccount(true)}
+              className="flex items-center justify-center rounded-lg"
+              style={{ width: 34, height: 34, border: `1px solid ${C.line}`, color: C.inkSoft }}
+              title="Your account"
+            >
+              <User size={16} />
+            </button>
             {isPaid && tier === "basic" && (
               <button
                 onClick={() => setShowUpgrade(true)}
@@ -2469,14 +2480,6 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
                 Upgrade to Pro
               </button>
             )}
-            <a
-              href="mailto:support@plantodish.com"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
-              style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}
-              title="Email support@plantodish.com"
-            >
-              <LifeBuoy size={14} /> Support
-            </a>
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
@@ -2518,6 +2521,14 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
         {tab === "settings" && <SettingsTab settings={settings} setSettings={setSettings} />}
       </div>
 
+      <div className="px-3 sm:px-6 pb-6 max-w-7xl mx-auto no-print text-center text-xs" style={{ color: C.inkSoft }}>
+        Questions or feedback? We're at{" "}
+        <a href="mailto:support@plantodish.com" style={{ color: C.forest, textDecoration: "underline" }}>
+          support@plantodish.com
+        </a>{" "}
+        anytime.
+      </div>
+
       {!settings.hasSeenWelcome && <WelcomeGuide onClose={dismissWelcome} />}
 
       {assistantDraft && (
@@ -2537,9 +2548,21 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
         <Pricing mode="upgrade" userEmail={session.user.email} currentTier={tier} onClose={() => setShowUpgrade(false)} />
       )}
 
+      {showAccount && (
+        <Account
+          session={session}
+          tier={tier}
+          isPaid={isPaid}
+          dietaryPreferences={settings.dietaryPreferences}
+          onSaveDietaryPreferences={(val) => setSettings((s) => ({ ...s, dietaryPreferences: val }))}
+          onUpgradeClick={() => { setShowAccount(false); setShowUpgrade(true); }}
+          onClose={() => setShowAccount(false)}
+        />
+      )}
+
       <FloatingAssistant
+        userId={userId}
         dietaryPreferences={settings.dietaryPreferences}
-        onSaveDietaryPreferences={(val) => setSettings((s) => ({ ...s, dietaryPreferences: val }))}
         onRecipeDrafted={(raw) => setAssistantDraft(recipeFromAIDraft(raw))}
         locked={!hasProAccess}
         onUpgradeClick={() => setShowUpgrade(true)}

@@ -72,6 +72,9 @@ Deno.serve(async (req) => {
     const tier = session.metadata?.tier;
     const patch: Record<string, unknown> = { is_paid: true };
     if (tier && VALID_TIERS.has(tier)) patch.tier = tier;
+    if (session.customer) {
+      patch.stripe_customer_id = typeof session.customer === "string" ? session.customer : session.customer.id;
+    }
 
     const { error: updateError } = await supabaseAdmin.from("profiles").update(patch).eq("id", user.id);
     if (updateError) throw updateError;
