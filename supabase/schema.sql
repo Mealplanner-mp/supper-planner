@@ -59,6 +59,14 @@ create policy "Users can update their own basic info"
 revoke update on profiles from authenticated;
 grant update (username, email) on profiles to authenticated;
 
+-- service_role (used by stripe-webhook, verify-checkout, billing-portal) bypasses
+-- RLS entirely, but RLS bypass and table-level GRANTs are separate things — it
+-- still needs its own explicit privileges to touch this table at all. Tables
+-- created via raw SQL (as opposed to the Table Editor UI) don't automatically
+-- get this, so without it every service-role update to is_paid/tier/
+-- stripe_customer_id fails with "permission denied for table profiles".
+grant select, update on profiles to service_role;
+
 -- ---------------------------------------------------------------------------
 -- planner_data — one row per user, holds everything the app used to keep
 -- in window.storage

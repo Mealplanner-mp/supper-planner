@@ -123,6 +123,14 @@ export default function Pricing({ mode = "trial_expired", userEmail, currentTier
         Already paid? It may take a little while to confirm — check back soon.
       </p>
 
+      <p className="text-center text-xs mt-2" style={{ color: C.inkSoft }}>
+        Trouble logging in or anything else? We're at{" "}
+        <a href="mailto:support@plantodish.com" style={{ color: C.forest, textDecoration: "underline" }}>
+          support@plantodish.com
+        </a>
+        .
+      </p>
+
       {mode === "trial_expired" && (
         <button onClick={handleLogout} className="w-full text-center text-xs mt-4 underline" style={{ color: C.inkSoft }}>
           Log out

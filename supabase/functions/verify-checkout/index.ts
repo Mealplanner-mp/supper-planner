@@ -53,7 +53,9 @@ Deno.serve(async (req) => {
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    if (session.payment_status !== "paid") {
+    // A 100%-off promo code makes Stripe mark the session "no_payment_required"
+    // instead of "paid" — both mean the checkout genuinely completed.
+    if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
       return new Response(JSON.stringify({ isPaid: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -83,6 +85,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
+    console.error("verify-checkout failed:", err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

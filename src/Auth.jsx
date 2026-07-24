@@ -167,6 +167,14 @@ export default function Auth() {
             </button>
           </p>
         )}
+
+        <p className="text-center text-xs mt-4" style={{ color: C.inkSoft }}>
+          Trouble signing in? We're at{" "}
+          <a href="mailto:support@plantodish.com" style={{ color: C.forest, textDecoration: "underline" }}>
+            support@plantodish.com
+          </a>
+          .
+        </p>
       </div>
     </div>
   );
