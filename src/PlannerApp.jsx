@@ -1381,7 +1381,7 @@ function SettingsTab({ settings, setSettings }) {
         These settings shape how your weekly plan gets generated — change anything here, then hit{" "}
         <strong style={{ color: C.forest }}>Generate</strong> on the Planner tab to see it take effect.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="columns-1 sm:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
       <Card>
         <SectionLabel>Meat & dairy</SectionLabel>
         <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
@@ -1579,8 +1579,9 @@ function SettingsTab({ settings, setSettings }) {
           </div>
         )}
       </Card>
+      </div>
 
-      <Card style={{ gridColumn: "span 2" }}>
+      <Card style={{ marginTop: 16 }}>
         <SectionLabel>Weekly day rules</SectionLabel>
         <div className="text-xs italic mb-2" style={{ color: C.inkSoft }}>Leave both as "Any" for no rule. You can set category and simplicity together — e.g. dairy + under 20 min.</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
@@ -1612,7 +1613,6 @@ function SettingsTab({ settings, setSettings }) {
           })}
         </div>
       </Card>
-      </div>
     </div>
   );
 }
@@ -2131,7 +2131,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
           </div>
         </div>
 
-        <div className="rounded-xl flex flex-col justify-center" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14, width: 300 }}>
+        <div className="rounded-xl flex flex-col justify-center" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14, width: "min(300px, calc(100vw - 48px))" }}>
           <SectionLabel>Use up ingredients this week</SectionLabel>
           <div className="relative">
             <div

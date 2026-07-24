@@ -92,7 +92,7 @@ export default function FloatingAssistant({ userId, dietaryPreferences, onRecipe
       {open && (
         <div
           className="pop-in mb-3 rounded-2xl flex flex-col overflow-hidden"
-          style={{ width: 320, height: 420, background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(46,42,34,0.18)" }}
+          style={{ width: "min(320px, calc(100vw - 40px))", height: "min(420px, calc(100vh - 120px))", background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(46,42,34,0.18)" }}
         >
           <div className="shrink-0 flex items-center justify-between px-4 py-3" style={{ background: C.forestDark }}>
             <span className="text-sm font-semibold text-white" style={{ fontFamily: "'Poppins', sans-serif" }}>
