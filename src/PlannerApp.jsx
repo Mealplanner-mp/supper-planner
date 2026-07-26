@@ -1381,7 +1381,7 @@ function SettingsTab({ settings, setSettings }) {
         These settings shape how your weekly plan gets generated — change anything here, then hit{" "}
         <strong style={{ color: C.forest }}>Generate</strong> on the Planner tab to see it take effect.
       </p>
-      <div className="columns-1 sm:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
       <Card>
         <SectionLabel>Meat & dairy</SectionLabel>
         <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
@@ -1416,12 +1416,12 @@ function SettingsTab({ settings, setSettings }) {
         <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
           Controls how soon the same recipe is allowed to repeat, based on how it's tagged.
         </div>
-        <div className="space-y-2">
+        <div className="grid grid-cols-3 gap-2 mb-2">
           {["regular", "easy", "favorite"].map((k) => (
-            <div key={k} className="flex items-center justify-between">
-              <span className="text-sm capitalize" style={{ color: C.ink }}>{k} recipes</span>
+            <div key={k}>
+              <div className="text-xs capitalize mb-1" style={{ color: C.ink }}>{k}</div>
               <select
-                className="px-2 py-1 rounded text-sm"
+                className="w-full px-1 py-1 rounded text-xs"
                 style={{ border: `1px solid ${C.line}` }}
                 value={settings.repetition[k]}
                 onChange={(e) => set({ repetition: { ...settings.repetition, [k]: e.target.value } })}
@@ -1430,8 +1430,8 @@ function SettingsTab({ settings, setSettings }) {
               </select>
             </div>
           ))}
-          <div className="text-xs italic" style={{ color: C.inkSoft }}>"No preference" repeats a recipe only when nothing else fits.</div>
         </div>
+        <div className="text-xs italic" style={{ color: C.inkSoft }}>"No preference" repeats a recipe only when nothing else fits.</div>
       </Card>
 
       <Card>
@@ -1474,20 +1474,18 @@ function SettingsTab({ settings, setSettings }) {
           <input className="flex-1 px-2 py-1.5 rounded text-sm" style={{ border: `1px solid ${C.line}` }} placeholder="Add category…" value={categoryInput} onChange={(e) => setCategoryInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
           <button onClick={addCategory} className="px-3 rounded text-sm text-white" style={{ background: C.forest }}>Add</button>
         </div>
-        <div className="space-y-1">
+        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
           {categories.map((c, i) => (
-            <div key={c} className="flex items-center justify-between px-2 py-1 rounded" style={{ background: C.paperDark }}>
-              <span className="text-sm" style={{ color: C.ink }}>{c}</span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => moveCategory(i, -1)} disabled={i === 0} title="Move up">
-                  <ChevronRight size={13} color={C.inkSoft} style={{ transform: "rotate(-90deg)" }} />
-                </button>
-                <button onClick={() => moveCategory(i, 1)} disabled={i === categories.length - 1} title="Move down">
-                  <ChevronRight size={13} color={C.inkSoft} style={{ transform: "rotate(90deg)" }} />
-                </button>
-                <button onClick={() => removeCategory(c)} title="Remove"><X size={13} color={C.danger} /></button>
-              </div>
-            </div>
+            <span key={c} className="text-xs pl-2.5 pr-1 py-1 rounded-full flex items-center gap-0.5" style={{ background: C.paperDark, color: C.ink }}>
+              {c}
+              <button onClick={() => moveCategory(i, -1)} disabled={i === 0} title="Move up" style={{ opacity: i === 0 ? 0.35 : 1 }}>
+                <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(-90deg)" }} />
+              </button>
+              <button onClick={() => moveCategory(i, 1)} disabled={i === categories.length - 1} title="Move down" style={{ opacity: i === categories.length - 1 ? 0.35 : 1 }}>
+                <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(90deg)" }} />
+              </button>
+              <button onClick={() => removeCategory(c)} title="Remove"><X size={11} color={C.danger} /></button>
+            </span>
           ))}
         </div>
       </Card>
