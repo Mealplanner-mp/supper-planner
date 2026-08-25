@@ -58,7 +58,6 @@ export default function Auth() {
       style={{ background: C.paper, fontFamily: "'Inter', sans-serif" }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
         .auth-input:focus { border-color: ${C.forest} !important; box-shadow: 0 0 0 3px rgba(63,91,69,0.16); outline: none; }
       `}</style>
       <div
@@ -174,6 +173,12 @@ export default function Auth() {
             support@plantodish.com
           </a>
           .
+        </p>
+
+        <p className="text-center text-xs mt-2" style={{ color: C.inkSoft }}>
+          <a href="/privacy.html" style={{ color: C.inkSoft, textDecoration: "underline" }}>
+            Privacy Policy
+          </a>
         </p>
       </div>
     </div>

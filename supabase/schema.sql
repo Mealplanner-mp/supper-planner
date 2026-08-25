@@ -14,6 +14,8 @@ create table if not exists profiles (
   tier text,                             -- 'basic' | 'pro' | null (null = grandfathered/full access once is_paid)
   email text,                            -- mirrors auth.users.email so the Stripe webhook can match by email
   stripe_customer_id text,               -- set by stripe-webhook/verify-checkout; used for the billing portal
+  trial_reminder_sent boolean not null default false, -- "your trial ends soon" email, sent once
+  winback_sent boolean not null default false,        -- "we miss you" email, sent once after trial expiry
   created_at timestamptz default now()   -- also doubles as the free-trial start date
 );
 
@@ -21,6 +23,8 @@ alter table profiles add column if not exists is_paid boolean not null default f
 alter table profiles add column if not exists tier text;
 alter table profiles add column if not exists email text;
 alter table profiles add column if not exists stripe_customer_id text;
+alter table profiles add column if not exists trial_reminder_sent boolean not null default false;
+alter table profiles add column if not exists winback_sent boolean not null default false;
 
 alter table profiles enable row level security;
 
@@ -68,6 +72,24 @@ grant update (username, email) on profiles to authenticated;
 grant select, update on profiles to service_role;
 
 -- ---------------------------------------------------------------------------
+-- ai_usage — daily per-user request count, so the ai-assistant function can
+-- cap usage and one person can't run up the Anthropic bill by spamming it.
+-- Only ever touched by ai-assistant (service role) — no client access.
+-- ---------------------------------------------------------------------------
+create table if not exists ai_usage (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  usage_date date not null default current_date,
+  count int not null default 0,
+  primary key (user_id, usage_date)
+);
+
+alter table ai_usage enable row level security;
+-- Deliberately no policies for anon/authenticated — RLS with zero permissive
+-- policies denies all client access by default. service_role bypasses RLS,
+-- but (as with profiles above) still needs its own explicit table grant.
+grant select, insert, update on ai_usage to service_role;
+
+-- ---------------------------------------------------------------------------
 -- planner_data — one row per user, holds everything the app used to keep
 -- in window.storage
 -- ---------------------------------------------------------------------------
@@ -79,8 +101,11 @@ create table if not exists planner_data (
   usage_history jsonb default '{}',
   freezer_stock jsonb default '{}',
   grocery_checked jsonb default '{}',
+  manual_meals jsonb default '{}',
   updated_at timestamptz default now()
 );
+
+alter table planner_data add column if not exists manual_meals jsonb default '{}';
 
 alter table planner_data enable row level security;
 

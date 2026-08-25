@@ -1,5 +1,5 @@
-import React from "react";
-import { Check, X as XIcon } from "lucide-react";
+import React, { useState } from "react";
+import { Check, X as XIcon, RefreshCw } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
 
@@ -10,12 +10,9 @@ const C = {
   forest: "#0F9D63",
   line: "#DEE0D8",
   white: "#FFFFFF",
+  danger: "#EF4444",
 };
 
-// TODO: paste your real Stripe Payment Links here once created (buy.stripe.com/...).
-// Each Payment Link needs "Collect customer's email" turned ON, and a metadata
-// field `tier` set to "basic" / "pro" (Payment Link → Advanced options →
-// Metadata) so the stripe-webhook function knows which plan was purchased.
 const PLANS = [
   {
     key: "basic",
@@ -23,7 +20,6 @@ const PLANS = [
     price: "$5",
     tagline: "Everything you need to plan stress-free suppers.",
     features: ["Unlimited recipe box", "Weekly planner + grocery lists", "Freezer & baby-friendly planning"],
-    link: "https://buy.stripe.com/3cIcN5gsM9yO7EYgL06wE01",
   },
   {
     key: "pro",
@@ -31,18 +27,37 @@ const PLANS = [
     price: "$8",
     tagline: "Basic, plus AI on your side in the kitchen.",
     features: ["Everything in Basic", "AI cooking assistant chat", "Upload recipes from a photo or link"],
-    link: "https://buy.stripe.com/4gM8wP6Sc3aq6AUfGW6wE02",
     highlighted: true,
   },
 ];
 
-function paymentUrl(link, email) {
-  if (!link) return null;
-  return `${link}?prefilled_email=${encodeURIComponent(email || "")}`;
-}
-
-export default function Pricing({ mode = "trial_expired", userEmail, currentTier, onClose }) {
+export default function Pricing({ mode = "trial_expired", userEmail, currentTier, isPaid, onClose, onUpgradeRedirect }) {
+  const [submitting, setSubmitting] = useState(null); // plan key currently starting checkout
+  const [checkoutError, setCheckoutError] = useState("");
   const handleLogout = () => { supabase.auth.signOut(); };
+
+  // An already-paid subscriber must go through the billing portal to switch
+  // plans — that modifies their existing subscription in place. Starting a
+  // fresh checkout here would create a SECOND, independently-billing
+  // subscription (the exact bug this screen used to have).
+  const startCheckout = async (planKey) => {
+    if (submitting) return; // guards against a double-click firing two sessions
+    if (isPaid) {
+      if (onUpgradeRedirect) onUpgradeRedirect();
+      return;
+    }
+    setSubmitting(planKey);
+    setCheckoutError("");
+    const { data, error } = await supabase.functions.invoke("create-checkout-session", {
+      body: { tier: planKey, origin: window.location.origin },
+    });
+    if (error || data?.error) {
+      setCheckoutError(data?.error || error?.message || "Couldn't start checkout — try again.");
+      setSubmitting(null);
+      return;
+    }
+    window.location.href = data.url;
+  };
 
   const card = (
     <div
@@ -69,7 +84,6 @@ export default function Pricing({ mode = "trial_expired", userEmail, currentTier
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
         {PLANS.map((plan) => {
           const isCurrent = currentTier === plan.key;
-          const url = paymentUrl(plan.link, userEmail);
           return (
             <div
               key={plan.key}
@@ -101,23 +115,30 @@ export default function Pricing({ mode = "trial_expired", userEmail, currentTier
                 <div className="text-center text-xs py-2 rounded-lg" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
                   Current plan
                 </div>
-              ) : url ? (
-                <a
-                  href={url}
-                  className="text-center text-sm font-medium text-white py-2 rounded-lg"
-                  style={{ background: plan.highlighted ? C.forest : C.ink }}
-                >
-                  {mode === "upgrade" ? `Upgrade — ${plan.price}/mo` : `Continue — ${plan.price}/mo`}
-                </a>
               ) : (
-                <div className="text-center text-xs py-2 rounded-lg" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
-                  Payment link coming soon
-                </div>
+                <button
+                  onClick={() => startCheckout(plan.key)}
+                  disabled={!!submitting}
+                  className="text-center text-sm font-medium text-white py-2 rounded-lg flex items-center justify-center gap-1.5"
+                  style={{ background: plan.highlighted ? C.forest : C.ink, opacity: submitting && submitting !== plan.key ? 0.5 : 1 }}
+                >
+                  {submitting === plan.key ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : mode === "upgrade" ? (
+                    `Upgrade — ${plan.price}/mo`
+                  ) : (
+                    `Continue — ${plan.price}/mo`
+                  )}
+                </button>
               )}
             </div>
           );
         })}
       </div>
+
+      {checkoutError && (
+        <p className="text-center text-xs mt-1 mb-2" style={{ color: C.danger }}>{checkoutError}</p>
+      )}
 
       <p className="text-center text-xs mt-2" style={{ color: C.inkSoft }}>
         Already paid? It may take a little while to confirm — check back soon.

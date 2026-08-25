@@ -11,40 +11,34 @@ No manual "Add user" step needed.
 You've already created the two Products in Stripe → Product catalog:
 "Basic" ($5.00/month) and "Pro" ($8.00/month). Nothing more to do here.
 
-## 2. Create a Payment Link for each product
+## 2. ⚠️ Deactivate the old Payment Links
 
-Payment Links are separate from products — a product just defines the price,
-the Payment Link is the actual shareable checkout page. Do this once per plan:
+Checkout used to go through static Stripe **Payment Links**
+(`buy.stripe.com/...`). Those had a real billing bug: a Payment Link creates
+a **brand-new Stripe Customer on every checkout**, even for the same email —
+so re-subscribing after a cancellation, retrying, or clicking twice silently
+spun up a duplicate customer with its own subscription that kept billing,
+invisible to the app and to the Customer Portal.
 
-1. Stripe Dashboard → left sidebar → **Payment Links** → **+ New**.
-2. In the product picker, don't fill out a new product — instead search for
-   and select your existing **"Basic"** product (it'll show the $5.00/month
-   price already attached). Click **Add**.
-3. Scroll down to **Customer information** and turn ON **"Collect customer's
-   email address"** — the webhook depends on this to identify who paid.
-4. Open **Advanced options** → **Metadata** → add a row with key `tier` and
-   value `basic` (exactly that, lowercase).
-5. Still in **Advanced options**, find **"After payment"** and switch it from
-   the default "Show a confirmation page" to **"Don't show confirmation page"
-   / redirect to your website**, then enter:
-   `https://plantodish.com/?checkout=success&session_id={CHECKOUT_SESSION_ID}`
-   Stripe replaces `{CHECKOUT_SESSION_ID}` with the real session ID at
-   redirect time. The app uses it to verify the payment directly via the
-   `verify-checkout` function (near-instant), instead of waiting on the
-   webhook — see `src/App.jsx`.
-6. Click **Create link** (top right). Copy the resulting URL
-   (looks like `https://buy.stripe.com/xxxxxxxx`).
-7. Repeat steps 1–6 for the **"Pro"** product, using metadata value `pro`
-   instead of `basic` (the redirect URL is the same for both).
+The app now creates Checkout Sessions itself (`create-checkout-session`
+function, see below), which always reuses the existing Stripe Customer for a
+given account. The old Payment Links are no longer used anywhere in the code
+— **deactivate them** (Stripe Dashboard → Payment Links → open each one →
+"..." menu → Deactivate) so a stale bookmark or shared link can't route
+someone through the old, buggy flow.
 
-If you already created both links before adding this — same deal as with
-metadata, just **Edit** each existing link and add the redirect under
-Advanced options → After payment.
+**Also check for and clean up any duplicate customers/subscriptions this bug
+already created**: Stripe Dashboard → Customers, search by an affected
+email — if more than one Customer record shows up for the same person,
+open each one's Subscriptions tab and cancel any that shouldn't still be
+active, and issue refunds for erroneous charges from the Payments tab.
 
-## 3. Paste both links into the code
+## 3. Price IDs live in the checkout-session function
 
-Open [`src/Pricing.jsx`](../src/Pricing.jsx) and fill in the `link` field for
-each entry in the `PLANS` array with the matching Payment Link URL from step 2.
+Open [`supabase/functions/create-checkout-session/index.ts`](functions/create-checkout-session/index.ts)
+and confirm `PRICE_IDS.basic` / `PRICE_IDS.pro` match Stripe Dashboard →
+Product catalog → (plan) → Pricing → the `price_...` ID shown there (not the
+Payment Link URL — a different ID).
 
 ## 4. Supabase Auth Site URL
 
@@ -85,9 +79,11 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ...
 supabase functions deploy stripe-webhook --no-verify-jwt
 supabase functions deploy verify-checkout
 supabase functions deploy billing-portal
+supabase functions deploy create-checkout-session
 ```
-(`verify-checkout` and `billing-portal` both keep JWT verification ON — only
-a logged-in user can call them, for their own account.)
+(`verify-checkout`, `billing-portal`, and `create-checkout-session` all keep
+JWT verification ON — only a logged-in user can call them, for their own
+account.)
 
 The first command prints the webhook's URL, something like:
 `https://skwqwfoixwvouvbzdtft.supabase.co/functions/v1/stripe-webhook`
@@ -99,9 +95,14 @@ recreate it, the code change doesn't require a new endpoint.)
 
 Stripe Dashboard → Developers → Webhooks → **Add endpoint**.
 - Endpoint URL: the function URL from step 8
-- Events to send: `checkout.session.completed`
+- Events to send: `checkout.session.completed`, `invoice.payment_succeeded`,
+  `invoice.payment_failed`, `customer.subscription.deleted`
 - After creating it, click into the endpoint and reveal the **Signing
   secret** (`whsec_...`) — set that as `STRIPE_WEBHOOK_SECRET` (step 7).
+
+If you already have this endpoint from before the last three event types
+were added: click into it → **Edit** → add the missing events to the
+existing list (no need to recreate the endpoint or change the secret).
 
 ## 10. Turn on the Customer Portal (for "Manage payment method")
 
@@ -121,22 +122,49 @@ updated on that user's row in Supabase Table Editor → `profiles`.
 
 ## How the pricing page links to Stripe
 
-[`src/Pricing.jsx`](../src/Pricing.jsx) appends `?prefilled_email=<their email>`
-to whichever Payment Link the user clicks, so Stripe checkout arrives with
-their email locked in — this is what lets the webhook match the payment back
-to the right existing account without a fully custom Checkout Session flow.
+[`src/Pricing.jsx`](../src/Pricing.jsx) calls the `create-checkout-session`
+function (passing which tier was picked), which creates a Stripe Checkout
+Session server-side and reuses the caller's existing `stripe_customer_id` if
+they have one — so the same account can never end up attached to more than
+one Stripe Customer, no matter how many times they check out over time. The
+session is stamped with `client_reference_id` = the Supabase user id, which
+`stripe-webhook` and `verify-checkout` use to match the payment back to the
+right account (falling back to email only for old sessions from the
+since-deactivated Payment Links, which never set it).
+
+If a user is already paid (`is_paid`), `create-checkout-session` refuses and
+the pricing page instead opens the Stripe **billing portal** — changing
+plans has to modify the existing subscription there, never start a new
+checkout, or it would create a second subscription on top of the first.
 
 ## Notes
 
-- If a profile can't be matched by email (e.g. they paid with a different
-  email than they signed up with), the webhook logs it and no-ops — check
-  Supabase Edge Function logs if a payment doesn't seem to unlock the app.
+- If a profile can't be matched by `client_reference_id` or email, the
+  webhook logs it and no-ops — check Supabase Edge Function logs if a
+  payment doesn't seem to unlock the app.
 - Manually flipping `is_paid = true` in the Supabase dashboard (no `tier`
   set) grandfathers that account into full access, including the AI
   assistant and recipe uploads — see the `hasProAccess` check in `src/App.jsx`.
-- Anyone who paid *before* `stripe_customer_id` capture was added (this
-  update) won't have it backfilled automatically — their "Manage payment
-  method" button will show "No billing account on file yet" until their
-  next payment. If needed, backfill manually: find their Stripe Customer ID
-  (Stripe Dashboard → Customers → search by email) and set it on their
-  `profiles` row via Supabase Table Editor.
+- Anyone who paid *before* `stripe_customer_id` capture was added won't have
+  it backfilled automatically — their "Manage payment method" button will
+  show "No billing account on file yet" until their next payment. If needed,
+  backfill manually: find their Stripe Customer ID (Stripe Dashboard →
+  Customers → search by email) and set it on their `profiles` row via
+  Supabase Table Editor.
+- Subscription cancellations and failed/successful renewals are matched by
+  `stripe_customer_id`, not email — anyone who paid before that column
+  existed won't have their access auto-revoked on cancellation either, for
+  the same reason. Same manual backfill fixes it.
+
+## AI usage limit
+
+`ai-assistant` caps each user at 30 requests/day (see `DAILY_LIMIT` in
+`supabase/functions/ai-assistant/index.ts`) to prevent runaway Anthropic API
+costs from one account. It needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+now too (same values as the other functions — already set if you've done step
+7 above). Deploy with:
+```
+supabase functions deploy ai-assistant
+```
+Also run the updated `schema.sql` (adds the `ai_usage` table) if you haven't
+since this was added.

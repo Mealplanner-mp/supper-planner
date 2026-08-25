@@ -4,7 +4,9 @@
       "Bash(npm -v)",
       "Read(//c/Program Files/**)",
       "Bash(where node *)",
-      "Bash(where npm *)"
+      "Bash(where npm *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }

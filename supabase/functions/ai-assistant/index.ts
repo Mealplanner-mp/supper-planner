@@ -3,10 +3,17 @@
 // the client entirely. Deployed WITHOUT --no-verify-jwt, so Supabase itself
 // rejects any call that isn't from a logged-in user before this code runs.
 //
-// Required secret (set via `supabase secrets set`, never committed):
-//   ANTHROPIC_API_KEY — console.anthropic.com > API Keys
+// Also rate-limits requests per user per day (see DAILY_LIMIT below) so one
+// account can't run up the Anthropic bill by spamming this endpoint.
+//
+// Required secrets (set via `supabase secrets set`, never committed):
+//   ANTHROPIC_API_KEY         — console.anthropic.com > API Keys
+//   SUPABASE_URL              — same as VITE_SUPABASE_URL (likely already set)
+//   SUPABASE_SERVICE_ROLE_KEY — Supabase Project Settings > API > service_role key (likely already set)
 //
 // Deploy with: supabase functions deploy ai-assistant
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const RECIPE_JSON_SHAPE = `{"name": string, "type": one of ["protein","starch","veg","soup","dessert","combo"], "category": one of ["meat","dairy","parve","fish"], "simplicity": array subset of ["crockpot","under20","under30","onepot"], "ingredients": [{"name": string, "amount": number, "unit": string, "category": string}], "notes": string (numbered directions as plain text), "prepReminders": string}`;
 
@@ -17,6 +24,31 @@ const corsHeaders = {
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-haiku-4-5-20251001";
+const DAILY_LIMIT = 30; // requests per user per day, across ask/search/upload combined
+
+const supabaseAdmin = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+);
+
+async function checkAndIncrementUsage(userId: string): Promise<boolean> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: existing } = await supabaseAdmin
+    .from("ai_usage")
+    .select("count")
+    .eq("user_id", userId)
+    .eq("usage_date", today)
+    .maybeSingle();
+
+  const currentCount = existing?.count ?? 0;
+  if (currentCount >= DAILY_LIMIT) return false;
+
+  await supabaseAdmin
+    .from("ai_usage")
+    .upsert({ user_id: userId, usage_date: today, count: currentCount + 1 }, { onConflict: "user_id,usage_date" });
+
+  return true;
+}
 
 async function callClaude({ content, messages, system, tools, maxTokens = 1200 }: {
   content?: unknown;
@@ -66,6 +98,21 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace("Bearer ", "");
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    if (userError || !userData?.user) {
+      return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401, headers: corsHeaders });
+    }
+
+    const allowed = await checkAndIncrementUsage(userData.user.id);
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: `You've hit today's AI usage limit (${DAILY_LIMIT} requests). It resets tomorrow.` }),
+        { status: 429, headers: corsHeaders }
+      );
+    }
+
     const { mode, query, image, link, question, history, dietaryPreferences } = await req.json();
 
     if (mode === "search") {

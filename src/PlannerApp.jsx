@@ -5,7 +5,7 @@ import {
   Settings as SettingsIcon, BookOpen, Download, AlertTriangle, Check,
   GripVertical, Clock, Copy, Printer, LogOut, Baby, Sparkles, Upload,
   ImagePlus, PenLine, Link as LinkIcon, MessageCircle, Send, Eye,
-  User
+  User, Coffee, Sandwich, Apple, ChefHat, Minus
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import Logo, { BRAND } from "./Logo.jsx";
@@ -54,6 +54,19 @@ const CATEGORY_COLORS = {
 
 const TYPE_OPTIONS = ["protein", "starch", "veg", "soup", "dessert", "combo"];
 const CATEGORY_OPTIONS = ["meat", "dairy", "parve", "fish"];
+const MEAL_TYPE_OPTIONS = ["breakfast", "lunch", "snack", "supper"];
+const MEAL_TYPE_META = {
+  breakfast: { label: "Breakfast", color: C.mustard, icon: Coffee },
+  lunch: { label: "Lunch", color: C.dustyBlue, icon: Sandwich },
+  snack: { label: "Snack", color: C.plum, icon: Apple },
+  supper: { label: "Supper", color: C.forest, icon: ChefHat },
+};
+const AUTO_MEAL_TYPES = ["breakfast", "lunch", "snack"];
+const AUTO_REPETITION_OPTIONS = [
+  { key: "full", label: "Full rotation" },
+  { key: "weekOnly", label: "This week only" },
+  { key: "none", label: "No restriction" },
+];
 const SIMPLICITY_OPTIONS = [
   { key: "crockpot", label: "Crock pot" },
   { key: "under20", label: "Under 20 min" },
@@ -83,6 +96,7 @@ const isoWeek = (d = new Date()) => {
 const DEFAULT_SETTINGS = {
   noMeatDairyMix: true,
   dailyComposition: ["protein", "starch", "veg"],
+  supperDays: [...DAYS],
   repetition: { regular: "none", easy: "weekly", favorite: "none" },
   prioritizeFavorite: true,
   prioritizeEasy: false,
@@ -90,12 +104,28 @@ const DEFAULT_SETTINGS = {
   freezer: { day: "Sunday", frequency: "biweekly" },
   weeklyDayRules: DAYS.reduce((acc, d) => ({ ...acc, [d]: { category: "", simplicity: "" } }), {}),
   ingredientCategories: [...INGREDIENT_CATEGORIES],
-  babyFriendly: { enabled: false, mode: "separate", components: [] }, // mode: "separate" | "components"
+  // one baby-friendly config per meal type — mode: "separate" | "components"
+  babyFriendly: {
+    supper: { enabled: false, mode: "separate", components: [] },
+    breakfast: { enabled: false, mode: "separate", components: [] },
+    lunch: { enabled: false, mode: "separate", components: [] },
+    snack: { enabled: false, mode: "separate", components: [] },
+  },
+  // per meal type: which days to auto-fill (empty = stays fully manual), which components make up
+  // the meal, and how strict repeat-avoidance should be. repetition: "full" | "weekOnly" | "none"
+  autoMeals: {
+    breakfast: { days: [], composition: ["protein"], repetition: "full" },
+    lunch: { days: [], composition: ["protein"], repetition: "full" },
+    snack: { days: [], composition: ["protein"], repetition: "full" },
+  },
 };
+
+const buildEmptyManualMeals = () => DAYS.reduce((acc, d) => ({ ...acc, [d]: { breakfast: [], lunch: [], snack: [] } }), {});
 
 const emptyRecipe = () => ({
   id: uid(),
   name: "",
+  mealType: "supper",
   type: "protein",
   comboTypes: [],
   category: "meat",
@@ -119,12 +149,13 @@ function recipeFromAIDraft(parsed) {
   return {
     ...base,
     name: parsed.name || base.name,
+    mealType: MEAL_TYPE_OPTIONS.includes(parsed.mealType) ? parsed.mealType : base.mealType,
     type: TYPE_OPTIONS.includes(parsed.type) ? parsed.type : base.type,
     comboTypes: Array.isArray(parsed.comboTypes) ? parsed.comboTypes.filter((c) => COMPONENT_OPTIONS.includes(c)) : base.comboTypes,
     category: CATEGORY_OPTIONS.includes(parsed.category) ? parsed.category : base.category,
     simplicity: Array.isArray(parsed.simplicity) ? parsed.simplicity.filter((s) => SIMPLICITY_OPTIONS.some((o) => o.key === s)) : base.simplicity,
     ingredients: Array.isArray(parsed.ingredients)
-      ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "" }))
+      ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "", price: "" }))
       : base.ingredients,
     notes: parsed.notes || base.notes,
     prepReminders: parsed.prepReminders || base.prepReminders,
@@ -186,6 +217,7 @@ const FIELD_COLUMNS = {
   usageHistory: "usage_history",
   freezerStock: "freezer_stock",
   groceryChecked: "grocery_checked",
+  manualMeals: "manual_meals",
 };
 
 async function loadPlannerRow(userId) {
@@ -353,6 +385,7 @@ function ConfirmModal({ title, body, confirmLabel = "Delete", onConfirm, onCance
 /* ---------------------------------------------------------------------- */
 function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, babyFriendlyEnabled, dragHandleProps }) {
   const tabColor = CATEGORY_COLORS[recipe.category] || C.forest;
+  const cost = recipe.ingredients.reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0);
   return (
     <div
       className="card-hover rounded-lg mb-3 cursor-pointer group"
@@ -370,6 +403,14 @@ function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, baby
         >
           {recipe.category}
         </span>
+        {recipe.mealType && recipe.mealType !== "supper" && (
+          <span
+            className="px-2 py-0.5 rounded-sm text-[10px] font-semibold uppercase"
+            style={{ background: C.paperDark, color: C.inkSoft, fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}
+          >
+            {MEAL_TYPE_META[recipe.mealType]?.label || recipe.mealType}
+          </span>
+        )}
       </div>
       <div className="p-3 pt-1.5">
         <div className="flex items-start justify-between gap-2">
@@ -419,6 +460,7 @@ function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, baby
         <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: `1px dashed ${C.line}` }}>
           <span className="text-[11px]" style={{ color: C.inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
             {recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}
+            {cost > 0 && <> · ~${cost.toFixed(2)}</>}
           </span>
           <div className="flex items-center gap-2.5">
             <button onClick={(e) => { e.stopPropagation(); onDuplicate(recipe.id); }} title="Duplicate recipe">
@@ -449,7 +491,8 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
 
   const set = (patch) => setR((prev) => ({ ...prev, ...patch }));
 
-  const addIngredient = () => set({ ingredients: [...r.ingredients, { id: uid(), name: "", amount: "", unit: "unit", category: "" }] });
+  const addIngredient = () => set({ ingredients: [...r.ingredients, { id: uid(), name: "", amount: "", unit: "unit", category: "", price: "" }] });
+  const ingredientsCost = r.ingredients.reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0);
   const updateIngredient = (id, patch) => set({ ingredients: r.ingredients.map((i) => (i.id === id ? { ...i, ...patch } : i)) });
   const removeIngredient = (id) => set({ ingredients: r.ingredients.filter((i) => i.id !== id) });
 
@@ -578,6 +621,13 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
                 />
               </div>
 
+              <div>
+                <SectionLabel>Meal</SectionLabel>
+                <select className="w-full px-2 py-1.5 rounded-lg text-sm" style={{ border: `1px solid ${C.line}`, background: C.white }} value={r.mealType || "supper"} onChange={(e) => set({ mealType: e.target.value })}>
+                  {MEAL_TYPE_OPTIONS.map((m) => <option key={m} value={m}>{MEAL_TYPE_META[m].label}</option>)}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <SectionLabel>Type</SectionLabel>
@@ -675,9 +725,16 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
               <div className="flex flex-col flex-1 md:min-h-0">
                 <div className="flex items-center justify-between mb-1 shrink-0">
                   <SectionLabel>Ingredients</SectionLabel>
-                  <button onClick={addIngredient} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.forest, fontFamily: "'JetBrains Mono', monospace" }}>
-                    <Plus size={13} /> Add row
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {ingredientsCost > 0 && (
+                      <span className="text-xs font-medium" style={{ color: C.forestDark, fontFamily: "'JetBrains Mono', monospace" }}>
+                        ~${ingredientsCost.toFixed(2)}
+                      </span>
+                    )}
+                    <button onClick={addIngredient} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.forest, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <Plus size={13} /> Add row
+                    </button>
+                  </div>
                 </div>
                 <div className="flex-1 md:min-h-0 md:overflow-y-auto space-y-1.5 pr-1" style={{ minHeight: 80 }}>
                   {r.ingredients.map((ing) => (
@@ -696,6 +753,17 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
                         <option value="">Category…</option>
                         {allIngredientCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm" style={{ color: C.inkSoft }}>$</span>
+                        <input
+                          className="w-16 pl-4 pr-1 py-1.5 rounded text-sm"
+                          style={{ border: `1px solid ${C.line}`, background: C.white }}
+                          placeholder="0.00"
+                          title="Rough price for this amount"
+                          value={ing.price ?? ""}
+                          onChange={(e) => updateIngredient(ing.id, { price: e.target.value })}
+                        />
+                      </div>
                       <button onClick={() => removeIngredient(ing.id)}><X size={14} color={C.danger} /></button>
                     </div>
                   ))}
@@ -919,17 +987,26 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
   const [pendingUndo, setPendingUndo] = useState(null); // { recipe, index }
   const [expanded, setExpanded] = useState({}); // mobile accordion: type -> bool
   const [babyListOpen, setBabyListOpen] = useState(false);
+  const [mealTypeFilter, setMealTypeFilter] = useState("all");
 
   const toggleExpanded = (t) => setExpanded((prev) => ({ ...prev, [t]: !prev[t] }));
+
+  const mealTypeCounts = useMemo(() => {
+    const counts = { all: recipes.length };
+    MEAL_TYPE_OPTIONS.forEach((m) => (counts[m] = 0));
+    recipes.forEach((r) => { counts[r.mealType || "supper"] = (counts[r.mealType || "supper"] || 0) + 1; });
+    return counts;
+  }, [recipes]);
 
   const byType = useMemo(() => {
     const groups = {};
     TYPE_OPTIONS.forEach((t) => (groups[t] = []));
     recipes
       .filter((r) => !query || r.name.toLowerCase().includes(query.toLowerCase()))
+      .filter((r) => mealTypeFilter === "all" || (r.mealType || "supper") === mealTypeFilter)
       .forEach((r) => groups[r.type]?.push(r));
     return groups;
-  }, [recipes, query]);
+  }, [recipes, query, mealTypeFilter]);
 
   const save = (r) => {
     setRecipes((prev) => {
@@ -978,7 +1055,7 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
   const openManual = () => {
     setChooserOpen(false);
     setEditingAIGenerated(false);
-    setEditing(emptyRecipe());
+    setEditing({ ...emptyRecipe(), mealType: mealTypeFilter === "all" ? "supper" : mealTypeFilter });
   };
   const openUpload = () => {
     setChooserOpen(false);
@@ -999,6 +1076,17 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
 
   return (
     <div>
+      <div className="flex flex-wrap gap-1.5 mb-3.5">
+        <Chip active={mealTypeFilter === "all"} onClick={() => setMealTypeFilter("all")}>
+          All <span style={{ opacity: 0.7 }}>({mealTypeCounts.all})</span>
+        </Chip>
+        {MEAL_TYPE_OPTIONS.map((m) => (
+          <Chip key={m} active={mealTypeFilter === m} onClick={() => setMealTypeFilter(m)} color={MEAL_TYPE_META[m].color}>
+            {MEAL_TYPE_META[m].label} <span style={{ opacity: 0.7 }}>({mealTypeCounts[m] || 0})</span>
+          </Chip>
+        ))}
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="relative">
           <Search size={15} className="absolute left-2.5 top-2.5" color={C.inkSoft} />
@@ -1133,34 +1221,52 @@ function RecipesTab({ recipes, setRecipes, categoryMemory, ingredientCategories,
 /* ---------------------------------------------------------------------- */
 /* Grocery List Tab                                                       */
 /* ---------------------------------------------------------------------- */
-function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChecked }) {
+function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChecked, manualMeals }) {
   const [open, setOpen] = useState({});
   const [hidden, setHidden] = useState({});
 
+  const hasManualMeals = useMemo(
+    () => Object.values(manualMeals || {}).some((day) => ["breakfast", "lunch", "snack"].some((mt) => (day?.[mt] || []).length > 0)),
+    [manualMeals]
+  );
+
   const aggregated = useMemo(() => {
-    if (!plan) return {};
-    const map = {}; // key: name|unit -> { name, unit, total, category, uses: [{recipeName, amount}] }
-    Object.values(plan.days || {}).forEach((day) => {
-      (day.slots || []).forEach((slot) => {
-        const recipe = recipes.find((r) => r.id === slot.recipeId);
-        if (!recipe) return;
-        recipe.ingredients.forEach((ing) => {
-          if (!ing.name) return;
-          const nameKey = ing.name.trim().toLowerCase();
-          const isStaple = settings.pantryStaples.some((p) => p.trim().toLowerCase() === nameKey);
-          if (isStaple) return;
-          const key = `${nameKey}|${ing.unit}`;
-          if (!map[key]) {
-            map[key] = { name: ing.name, unit: ing.unit, total: 0, category: ing.category || "", uses: [] };
-          }
-          const amt = parseFloat(ing.amount) || 0;
-          map[key].total += amt;
-          map[key].uses.push({ recipe: recipe.name || "Untitled", amount: `${ing.amount || "?"} ${ing.unit}` });
-        });
+    const map = {}; // key: name|unit -> { name, unit, total, cost, category, uses: [{recipeName, amount}] }
+    const addRecipeIngredients = (recipe) => {
+      if (!recipe) return;
+      recipe.ingredients.forEach((ing) => {
+        if (!ing.name) return;
+        const nameKey = ing.name.trim().toLowerCase();
+        const isStaple = settings.pantryStaples.some((p) => p.trim().toLowerCase() === nameKey);
+        if (isStaple) return;
+        const key = `${nameKey}|${ing.unit}`;
+        if (!map[key]) {
+          map[key] = { name: ing.name, unit: ing.unit, total: 0, cost: 0, category: ing.category || "", uses: [] };
+        }
+        const amt = parseFloat(ing.amount) || 0;
+        map[key].total += amt;
+        map[key].cost += parseFloat(ing.price) || 0;
+        map[key].uses.push({ recipe: recipe.name || "Untitled", amount: `${ing.amount || "?"} ${ing.unit}` });
+      });
+    };
+
+    if (plan) {
+      Object.values(plan.days || {}).forEach((day) => {
+        (day.slots || []).forEach((slot) => addRecipeIngredients(recipes.find((r) => r.id === slot.recipeId)));
+      });
+    }
+    Object.values(manualMeals || {}).forEach((day) => {
+      ["breakfast", "lunch", "snack"].forEach((mt) => {
+        (day?.[mt] || []).forEach((recipeId) => addRecipeIngredients(recipes.find((r) => r.id === recipeId)));
       });
     });
     return map;
-  }, [plan, recipes, settings.pantryStaples]);
+  }, [plan, manualMeals, recipes, settings.pantryStaples]);
+
+  const grandTotalCost = useMemo(
+    () => Object.values(aggregated).reduce((sum, item) => sum + item.cost, 0),
+    [aggregated]
+  );
 
   const categoryList = settings.ingredientCategories && settings.ingredientCategories.length ? settings.ingredientCategories : INGREDIENT_CATEGORIES;
 
@@ -1204,10 +1310,12 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
       text += `${cat.toUpperCase()}\n`;
       items.forEach((i) => {
         const key = `${i.name}|${i.unit}`;
-        text += `  [${groceryChecked[key] ? "x" : " "}] ${i.name}: ${Math.round(i.total * 100) / 100} ${i.unit}\n`;
+        const costStr = i.cost > 0 ? ` (~$${i.cost.toFixed(2)})` : "";
+        text += `  [${groceryChecked[key] ? "x" : " "}] ${i.name}: ${Math.round(i.total * 100) / 100} ${i.unit}${costStr}\n`;
       });
       text += "\n";
     });
+    if (grandTotalCost > 0) text += `ESTIMATED TOTAL: $${grandTotalCost.toFixed(2)}\n`;
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1219,11 +1327,11 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
 
   const printList = () => window.print();
 
-  if (!plan) {
+  if (!plan && !hasManualMeals) {
     return (
       <div className="fade-in text-center py-20 flex flex-col items-center gap-2" style={{ color: C.inkSoft }}>
         <ShoppingCart size={28} color={C.line} />
-        <div>Generate a weekly plan first — the grocery list builds itself from it.</div>
+        <div>Generate a weekly supper plan, or add some breakfasts/lunches/snacks — the grocery list builds itself from them.</div>
       </div>
     );
   }
@@ -1241,9 +1349,15 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
           </button>
         </div>
       </div>
-      <div className="flex items-center justify-between mb-4 no-print">
+      <div className="flex items-center justify-between mb-4 no-print flex-wrap gap-2">
         <span className="text-xs" style={{ color: C.inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
           {checkedCount} of {allKeys.length} checked off
+          {grandTotalCost > 0 && (
+            <>
+              {" · "}
+              <span style={{ color: C.forestDark, fontWeight: 600 }}>Est. total: ${grandTotalCost.toFixed(2)}</span>
+            </>
+          )}
         </span>
         {checkedCount > 0 && (
           <button onClick={resetChecks} className="text-xs underline" style={{ color: C.inkSoft }}>
@@ -1254,7 +1368,10 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
 
       {/* Print-only view: fully expanded, no interactive chrome */}
       <div className="print-only">
-        <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 22, marginBottom: 12 }}>Weekly grocery list</h1>
+        <h1 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 22, marginBottom: 12 }}>
+          Weekly grocery list
+          {grandTotalCost > 0 && <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 10 }}>— est. total ${grandTotalCost.toFixed(2)}</span>}
+        </h1>
         {Object.entries(byCategory).map(([cat, items]) => (
           <div key={cat} style={{ marginBottom: 14, breakInside: "avoid" }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #999", paddingBottom: 3, marginBottom: 6 }}>{cat}</div>
@@ -1264,7 +1381,10 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
                 <div key={key} style={{ marginBottom: 6, fontSize: 13 }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{groceryChecked[key] ? "☑" : "☐"} {item.name}</span>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{Math.round(item.total * 100) / 100} {item.unit}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {Math.round(item.total * 100) / 100} {item.unit}
+                      {item.cost > 0 && ` (~$${item.cost.toFixed(2)})`}
+                    </span>
                   </div>
                   <div style={{ fontSize: 10, color: "#555", marginLeft: 16 }}>
                     {item.uses.map((u, i) => `${u.recipe} (${u.amount})`).join(" · ")}
@@ -1310,10 +1430,11 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
                         </div>
                       </div>
                       <span
-                        className="text-sm font-medium shrink-0"
+                        className="text-sm font-medium shrink-0 text-right"
                         style={{ fontFamily: "'JetBrains Mono', monospace", color: isChecked ? C.inkSoft : C.forestDark, textDecoration: isChecked ? "line-through" : "none" }}
                       >
                         {Math.round(item.total * 100) / 100} {item.unit}
+                        {item.cost > 0 && <div className="text-xs" style={{ color: C.inkSoft, fontWeight: 400 }}>${item.cost.toFixed(2)}</div>}
                       </span>
                     </div>
                     {isOpen && (
@@ -1339,6 +1460,153 @@ function GroceryListTab({ plan, recipes, settings, groceryChecked, setGroceryChe
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Baby-friendly settings — reused per meal type, each with its own on/off */
+/* ---------------------------------------------------------------------- */
+function BabyFriendlySettings({ mealType, value, onChange }) {
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm mb-2">
+        <input type="checkbox" checked={value.enabled} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} />
+        Enable baby-friendly planning
+      </label>
+      {value.enabled && (
+        <div className="space-y-2 mt-1">
+          <div>
+            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
+              <input
+                type="radio"
+                name={`babyFriendlyMode-${mealType}`}
+                className="mt-0.5"
+                checked={value.mode === "separate"}
+                onChange={() => onChange({ ...value, mode: "separate" })}
+              />
+              Keep baby-friendly recipes separate — they're never used for a regular slot, only added as an additional baby-friendly dish
+            </label>
+            <div className="text-xs italic mt-1 ml-5" style={{ color: C.inkSoft }}>
+              Since only one extra baby-friendly dish gets added per day, ideally tag recipes that cover the whole meal, not just one component.
+            </div>
+          </div>
+
+          <div>
+            <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
+              <input
+                type="radio"
+                name={`babyFriendlyMode-${mealType}`}
+                className="mt-0.5"
+                checked={value.mode === "components"}
+                onChange={() => onChange({ ...value, mode: "components" })}
+              />
+              The following parts of the meal should be baby-friendly:
+            </label>
+            {value.mode === "components" && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5 ml-5">
+                {COMPONENT_OPTIONS.map((c) => (
+                  <Chip
+                    key={c}
+                    active={(value.components || []).includes(c)}
+                    onClick={() => {
+                      const current = value.components || [];
+                      const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+                      onChange({ ...value, components: next });
+                    }}
+                  >
+                    {c}
+                  </Chip>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Auto-generation settings card — one per meal type (breakfast/lunch/snack) */
+/* ---------------------------------------------------------------------- */
+function AutoMealSettingsCard({ mealType, settings, set }) {
+  const meta = MEAL_TYPE_META[mealType];
+  const cfg = settings.autoMeals[mealType];
+  const updateCfg = (patch) => set({ autoMeals: { ...settings.autoMeals, [mealType]: { ...cfg, ...patch } } });
+  const toggleDay = (d) => updateCfg({ days: cfg.days.includes(d) ? cfg.days.filter((x) => x !== d) : [...cfg.days, d] });
+  const toggleComponent = (c) => updateCfg({ composition: cfg.composition.includes(c) ? cfg.composition.filter((x) => x !== c) : [...cfg.composition, c] });
+
+  return (
+    <div>
+      <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+        Pick which days should auto-fill with {meta.label.toLowerCase()}. Leave every day off to keep it fully manual, like today.
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {DAYS.map((d) => (
+          <Chip key={d} active={cfg.days.includes(d)} onClick={() => toggleDay(d)} color={meta.color}>{d.slice(0, 3)}</Chip>
+        ))}
+      </div>
+
+      <div className="mb-3">
+        <div className="text-xs mb-1" style={{ color: C.ink }}>Composition</div>
+        <div className="text-xs mb-1.5" style={{ color: C.inkSoft }}>
+          Pick which parts make up {meta.label.toLowerCase()} — one recipe gets picked per part, every auto-fill day.
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {COMPONENT_OPTIONS.map((c) => (
+            <Chip key={c} active={cfg.composition.includes(c)} onClick={() => toggleComponent(c)} color={meta.color}>{c}</Chip>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <div className="text-xs mb-1" style={{ color: C.ink }}>Repetition</div>
+        <select
+          className="px-2 py-1 rounded text-sm"
+          style={{ border: `1px solid ${C.line}` }}
+          value={cfg.repetition}
+          onChange={(e) => updateCfg({ repetition: e.target.value })}
+        >
+          {AUTO_REPETITION_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <div className="text-xs mb-1" style={{ color: C.ink }}>Baby-friendly</div>
+        <BabyFriendlySettings mealType={mealType} value={settings.babyFriendly[mealType]} onChange={(v) => set({ babyFriendly: { ...settings.babyFriendly, [mealType]: v } })} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Collapsible settings section — starts minimized, plus icon to expand   */
+/* ---------------------------------------------------------------------- */
+function SettingsSection({ title, subtitle, icon: Icon, color, children }) {
+  const [open, setOpen] = useState(false);
+  const accent = color || C.forest;
+  return (
+    <div className="rounded-xl mb-4" style={{ border: `1px solid ${C.line}`, background: C.white, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-4 py-3.5 text-left"
+        style={{ background: open ? C.paperDark : C.white }}
+      >
+        {Icon && <Icon size={17} color={accent} />}
+        <div className="flex-grow min-w-0">
+          <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 15, color: C.ink }}>{title}</div>
+          {subtitle && <div className="text-xs" style={{ color: C.inkSoft }}>{subtitle}</div>}
+        </div>
+        <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 24, height: 24, background: `${accent}1A` }}>
+          {open ? <Minus size={13} color={accent} /> : <Plus size={13} color={accent} />}
+        </div>
+      </button>
+      {open && (
+        <div className="p-4" style={{ borderTop: `1px solid ${C.line}` }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -1381,236 +1649,212 @@ function SettingsTab({ settings, setSettings }) {
         These settings shape how your weekly plan gets generated — change anything here, then hit{" "}
         <strong style={{ color: C.forest }}>Generate</strong> on the Planner tab to see it take effect.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
-      <Card>
-        <SectionLabel>Meat & dairy</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          Keeps a meat recipe and a dairy recipe from ever landing on the same day.
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={settings.noMeatDairyMix} onChange={(e) => set({ noMeatDairyMix: e.target.checked })} />
-          Don't mix meat and dairy recipes in the same meal
-        </label>
-      </Card>
 
-      <Card>
-        <SectionLabel>Daily meal composition</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          Pick which parts make up a typical supper — the planner tries to include one of each, every day.
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {COMPONENT_OPTIONS.map((c) => (
-            <Chip
-              key={c}
-              active={settings.dailyComposition.includes(c)}
-              onClick={() => set({ dailyComposition: settings.dailyComposition.includes(c) ? settings.dailyComposition.filter((x) => x !== c) : [...settings.dailyComposition, c] })}
-            >
-              {c}
-            </Chip>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <SectionLabel>Repetition</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          Controls how soon the same recipe is allowed to repeat, based on how it's tagged.
-        </div>
-        <div className="grid grid-cols-3 gap-2 mb-2">
-          {["regular", "easy", "favorite"].map((k) => (
-            <div key={k}>
-              <div className="text-xs capitalize mb-1" style={{ color: C.ink }}>{k}</div>
-              <select
-                className="w-full px-1 py-1 rounded text-xs"
-                style={{ border: `1px solid ${C.line}` }}
-                value={settings.repetition[k]}
-                onChange={(e) => set({ repetition: { ...settings.repetition, [k]: e.target.value } })}
-              >
-                {REPEAT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
+      <SettingsSection title="Supper" subtitle="Composition, repetition, freezer, baby-friendly, and per-day rules" icon={MEAL_TYPE_META.supper.icon} color={MEAL_TYPE_META.supper.color}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+          <Card>
+            <SectionLabel>Days to plan</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Which days supper auto-fills when you hit Generate. Days you leave off just won't get a supper plan.
             </div>
-          ))}
-        </div>
-        <div className="text-xs italic" style={{ color: C.inkSoft }}>"No preference" repeats a recipe only when nothing else fits.</div>
-      </Card>
+            <div className="flex flex-wrap gap-1.5">
+              {DAYS.map((d) => (
+                <Chip
+                  key={d}
+                  active={settings.supperDays.includes(d)}
+                  onClick={() => set({ supperDays: settings.supperDays.includes(d) ? settings.supperDays.filter((x) => x !== d) : [...settings.supperDays, d] })}
+                  color={MEAL_TYPE_META.supper.color}
+                >
+                  {d.slice(0, 3)}
+                </Chip>
+              ))}
+            </div>
+          </Card>
 
-      <Card>
-        <SectionLabel>Priority</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          When filling a slot, the planner reaches for these recipes first before picking randomly.
-        </div>
-        <label className="flex items-center gap-2 text-sm mb-2">
-          <input type="checkbox" checked={settings.prioritizeFavorite} onChange={(e) => set({ prioritizeFavorite: e.target.checked })} />
-          Always prioritize favorite recipes
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={settings.prioritizeEasy} onChange={(e) => set({ prioritizeEasy: e.target.checked })} />
-          Always prioritize easy recipes
-        </label>
-      </Card>
+          <Card>
+            <SectionLabel>Daily meal composition</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Pick which parts make up a typical supper — the planner tries to include one of each, every day.
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {COMPONENT_OPTIONS.map((c) => (
+                <Chip
+                  key={c}
+                  active={settings.dailyComposition.includes(c)}
+                  onClick={() => set({ dailyComposition: settings.dailyComposition.includes(c) ? settings.dailyComposition.filter((x) => x !== c) : [...settings.dailyComposition, c] })}
+                >
+                  {c}
+                </Chip>
+              ))}
+            </div>
+          </Card>
 
-      <Card>
-        <SectionLabel>Pantry staples</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>Hidden from the grocery list unless removed here.</div>
-        <div className="flex gap-2 mb-2">
-          <input className="flex-1 px-2 py-1.5 rounded text-sm" style={{ border: `1px solid ${C.line}` }} placeholder="Add staple…" value={stapleInput} onChange={(e) => setStapleInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addStaple()} />
-          <button onClick={addStaple} className="px-3 rounded text-sm text-white" style={{ background: C.forest }}>Add</button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {settings.pantryStaples.map((s) => (
-            <span key={s} className="text-xs px-2 py-1 rounded-full flex items-center gap-1" style={{ background: C.paperDark, color: C.ink }}>
-              {s} <button onClick={() => removeStaple(s)}><X size={11} /></button>
-            </span>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <SectionLabel>Grocery categories</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          These are the categories available when tagging an ingredient, and how the grocery list is grouped and ordered.
-        </div>
-        <div className="flex gap-2 mb-2">
-          <input className="flex-1 px-2 py-1.5 rounded text-sm" style={{ border: `1px solid ${C.line}` }} placeholder="Add category…" value={categoryInput} onChange={(e) => setCategoryInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
-          <button onClick={addCategory} className="px-3 rounded text-sm text-white" style={{ background: C.forest }}>Add</button>
-        </div>
-        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-          {categories.map((c, i) => (
-            <span key={c} className="text-xs pl-2.5 pr-1 py-1 rounded-full flex items-center gap-0.5" style={{ background: C.paperDark, color: C.ink }}>
-              {c}
-              <button onClick={() => moveCategory(i, -1)} disabled={i === 0} title="Move up" style={{ opacity: i === 0 ? 0.35 : 1 }}>
-                <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(-90deg)" }} />
-              </button>
-              <button onClick={() => moveCategory(i, 1)} disabled={i === categories.length - 1} title="Move down" style={{ opacity: i === categories.length - 1 ? 0.35 : 1 }}>
-                <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(90deg)" }} />
-              </button>
-              <button onClick={() => removeCategory(c)} title="Remove"><X size={11} color={C.danger} /></button>
-            </span>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <SectionLabel>Freezer planning</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          Automatically schedules a freezer meal into the rotation on the day and frequency you set below.
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Prep day</span>
-            <select className="px-2 py-1 rounded text-sm" style={{ border: `1px solid ${C.line}` }} value={settings.freezer.day} onChange={(e) => set({ freezer: { ...settings.freezer, day: e.target.value } })}>
-              {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Frequency</span>
-            <select className="px-2 py-1 rounded text-sm" style={{ border: `1px solid ${C.line}` }} value={settings.freezer.frequency} onChange={(e) => set({ freezer: { ...settings.freezer, frequency: e.target.value } })}>
-              {["weekly", "biweekly", "monthly"].map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-          <div className="text-xs italic" style={{ color: C.inkSoft }}>
-            Whether a freezer meal's prep counts as part of that day's meal or a separate task is set per recipe, on the recipe card.
-          </div>
-        </div>
-      </Card>
-
-      <Card>
-        <SectionLabel>Baby-friendly planning</SectionLabel>
-        <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-          Makes sure something baby-friendly shows up in the week's plan. Tag recipes as baby-friendly from the recipe card or editor.
-        </div>
-        <label className="flex items-center gap-2 text-sm mb-2">
-          <input
-            type="checkbox"
-            checked={settings.babyFriendly.enabled}
-            onChange={(e) => set({ babyFriendly: { ...settings.babyFriendly, enabled: e.target.checked } })}
-          />
-          Enable baby-friendly planning
-        </label>
-        {settings.babyFriendly.enabled && (
-          <div className="space-y-2 mt-1">
-            <div>
-              <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
-                <input
-                  type="radio"
-                  name="babyFriendlyMode"
-                  className="mt-0.5"
-                  checked={settings.babyFriendly.mode === "separate"}
-                  onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "separate" } })}
-                />
-                Keep baby-friendly recipes separate — they're never used for the regular meal, only added as the additional baby-friendly dish
-              </label>
-              <div className="text-xs italic mt-1 ml-5" style={{ color: C.inkSoft }}>
-                Since only one baby-friendly dish gets added per day, ideally tag recipes that cover baby's whole meal, not just one component.
+          <Card>
+            <SectionLabel>Freezer planning</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Automatically schedules a freezer meal into the rotation on the day and frequency you set below.
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Prep day</span>
+                <select className="px-2 py-1 rounded text-sm" style={{ border: `1px solid ${C.line}` }} value={settings.freezer.day} onChange={(e) => set({ freezer: { ...settings.freezer, day: e.target.value } })}>
+                  {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Frequency</span>
+                <select className="px-2 py-1 rounded text-sm" style={{ border: `1px solid ${C.line}` }} value={settings.freezer.frequency} onChange={(e) => set({ freezer: { ...settings.freezer, frequency: e.target.value } })}>
+                  {["weekly", "biweekly", "monthly"].map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div className="text-xs italic" style={{ color: C.inkSoft }}>
+                Whether a freezer meal's prep counts as part of that day's meal or a separate task is set per recipe, on the recipe card.
               </div>
             </div>
+          </Card>
 
-            <div>
-              <label className="flex items-start gap-2 text-xs" style={{ color: C.ink }}>
-                <input
-                  type="radio"
-                  name="babyFriendlyMode"
-                  className="mt-0.5"
-                  checked={settings.babyFriendly.mode === "components"}
-                  onChange={() => set({ babyFriendly: { ...settings.babyFriendly, mode: "components" } })}
-                />
-                The following parts of the meal should be baby-friendly:
-              </label>
-              {settings.babyFriendly.mode === "components" && (
-                <div className="flex flex-wrap gap-1.5 mt-1.5 ml-5">
-                  {COMPONENT_OPTIONS.map((c) => (
-                    <Chip
-                      key={c}
-                      active={(settings.babyFriendly.components || []).includes(c)}
-                      onClick={() => {
-                        const current = settings.babyFriendly.components || [];
-                        const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
-                        set({ babyFriendly: { ...settings.babyFriendly, components: next } });
-                      }}
-                    >
-                      {c}
-                    </Chip>
-                  ))}
+          <Card>
+            <SectionLabel>Baby-friendly planning</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Makes sure something baby-friendly shows up in supper. Tag recipes as baby-friendly from the recipe card or editor.
+            </div>
+            <BabyFriendlySettings mealType="supper" value={settings.babyFriendly.supper} onChange={(v) => set({ babyFriendly: { ...settings.babyFriendly, supper: v } })} />
+          </Card>
+        </div>
+
+        <Card style={{ marginTop: 16 }}>
+          <SectionLabel>Weekly day rules</SectionLabel>
+          <div className="text-xs italic mb-2" style={{ color: C.inkSoft }}>Leave both as "Any" for no rule. You can set category and simplicity together — e.g. dairy + under 20 min.</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            {DAYS.map((d) => {
+              const rule = settings.weeklyDayRules[d] || { category: "", simplicity: "" };
+              return (
+                <div key={d} className="rounded-lg p-2" style={{ background: C.paperDark }}>
+                  <div className="text-xs font-semibold uppercase mb-1.5" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>{d.slice(0, 3)}</div>
+                  <select
+                    className="w-full text-xs px-1 py-1 rounded mb-1"
+                    style={{ border: `1px solid ${C.line}` }}
+                    value={rule.category}
+                    onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, category: e.target.value } } })}
+                  >
+                    <option value="">Any category</option>
+                    {CATEGORY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <select
+                    className="w-full text-xs px-1 py-1 rounded"
+                    style={{ border: `1px solid ${C.line}` }}
+                    value={rule.simplicity}
+                    onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, simplicity: e.target.value } } })}
+                  >
+                    <option value="">Any simplicity</option>
+                    {SIMPLICITY_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
                 </div>
-              )}
-            </div>
+              );
+            })}
           </div>
-        )}
-      </Card>
-      </div>
+        </Card>
+      </SettingsSection>
 
-      <Card style={{ marginTop: 16 }}>
-        <SectionLabel>Weekly day rules</SectionLabel>
-        <div className="text-xs italic mb-2" style={{ color: C.inkSoft }}>Leave both as "Any" for no rule. You can set category and simplicity together — e.g. dairy + under 20 min.</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-          {DAYS.map((d) => {
-            const rule = settings.weeklyDayRules[d] || { category: "", simplicity: "" };
-            return (
-              <div key={d} className="rounded-lg p-2" style={{ background: C.paperDark }}>
-                <div className="text-xs font-semibold uppercase mb-1.5" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>{d.slice(0, 3)}</div>
-                <select
-                  className="w-full text-xs px-1 py-1 rounded mb-1"
-                  style={{ border: `1px solid ${C.line}` }}
-                  value={rule.category}
-                  onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, category: e.target.value } } })}
-                >
-                  <option value="">Any category</option>
-                  {CATEGORY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-                <select
-                  className="w-full text-xs px-1 py-1 rounded"
-                  style={{ border: `1px solid ${C.line}` }}
-                  value={rule.simplicity}
-                  onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, simplicity: e.target.value } } })}
-                >
-                  <option value="">Any simplicity</option>
-                  {SIMPLICITY_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                </select>
-              </div>
-            );
-          })}
+      {AUTO_MEAL_TYPES.map((mt) => (
+        <SettingsSection key={mt} title={MEAL_TYPE_META[mt].label} icon={MEAL_TYPE_META[mt].icon} color={MEAL_TYPE_META[mt].color}>
+          <AutoMealSettingsCard mealType={mt} settings={settings} set={set} />
+        </SettingsSection>
+      ))}
+
+      <SettingsSection title="General" subtitle="Shared across every meal type — meat/dairy, repetition, priority, pantry staples, grocery categories" icon={SettingsIcon} color={C.inkSoft}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+          <Card>
+            <SectionLabel>Meat & dairy</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Keeps a meat recipe and a dairy recipe from ever landing on the same day, across every meal type.
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={settings.noMeatDairyMix} onChange={(e) => set({ noMeatDairyMix: e.target.checked })} />
+              Don't mix meat and dairy recipes on the same day
+            </label>
+          </Card>
+
+          <Card>
+            <SectionLabel>Repetition</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              Controls how soon the same recipe is allowed to repeat, based on how it's tagged. Used by supper, and by any meal type set to "Full rotation."
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {["regular", "easy", "favorite"].map((k) => (
+                <div key={k}>
+                  <div className="text-xs capitalize mb-1" style={{ color: C.ink }}>{k}</div>
+                  <select
+                    className="w-full px-1 py-1 rounded text-xs"
+                    style={{ border: `1px solid ${C.line}` }}
+                    value={settings.repetition[k]}
+                    onChange={(e) => set({ repetition: { ...settings.repetition, [k]: e.target.value } })}
+                  >
+                    {REPEAT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="text-xs italic" style={{ color: C.inkSoft }}>"No preference" repeats a recipe only when nothing else fits.</div>
+          </Card>
+
+          <Card>
+            <SectionLabel>Priority</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              When filling a slot, the planner reaches for these recipes first before picking randomly. Used by supper, and by any meal type set to "Full rotation."
+            </div>
+            <label className="flex items-center gap-2 text-sm mb-2">
+              <input type="checkbox" checked={settings.prioritizeFavorite} onChange={(e) => set({ prioritizeFavorite: e.target.checked })} />
+              Always prioritize favorite recipes
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={settings.prioritizeEasy} onChange={(e) => set({ prioritizeEasy: e.target.checked })} />
+              Always prioritize easy recipes
+            </label>
+          </Card>
+
+          <Card>
+            <SectionLabel>Pantry staples</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>Hidden from the grocery list unless removed here.</div>
+            <div className="flex gap-2 mb-2">
+              <input className="flex-1 px-2 py-1.5 rounded text-sm" style={{ border: `1px solid ${C.line}` }} placeholder="Add staple…" value={stapleInput} onChange={(e) => setStapleInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addStaple()} />
+              <button onClick={addStaple} className="px-3 rounded text-sm text-white" style={{ background: C.forest }}>Add</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {settings.pantryStaples.map((s) => (
+                <span key={s} className="text-xs px-2 py-1 rounded-full flex items-center gap-1" style={{ background: C.paperDark, color: C.ink }}>
+                  {s} <button onClick={() => removeStaple(s)}><X size={11} /></button>
+                </span>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>Grocery categories</SectionLabel>
+            <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
+              These are the categories available when tagging an ingredient, and how the grocery list is grouped and ordered.
+            </div>
+            <div className="flex gap-2 mb-2">
+              <input className="flex-1 px-2 py-1.5 rounded text-sm" style={{ border: `1px solid ${C.line}` }} placeholder="Add category…" value={categoryInput} onChange={(e) => setCategoryInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCategory()} />
+              <button onClick={addCategory} className="px-3 rounded text-sm text-white" style={{ background: C.forest }}>Add</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+              {categories.map((c, i) => (
+                <span key={c} className="text-xs pl-2.5 pr-1 py-1 rounded-full flex items-center gap-0.5" style={{ background: C.paperDark, color: C.ink }}>
+                  {c}
+                  <button onClick={() => moveCategory(i, -1)} disabled={i === 0} title="Move up" style={{ opacity: i === 0 ? 0.35 : 1 }}>
+                    <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(-90deg)" }} />
+                  </button>
+                  <button onClick={() => moveCategory(i, 1)} disabled={i === categories.length - 1} title="Move down" style={{ opacity: i === categories.length - 1 ? 0.35 : 1 }}>
+                    <ChevronRight size={11} color={C.inkSoft} style={{ transform: "rotate(90deg)" }} />
+                  </button>
+                  <button onClick={() => removeCategory(c)} title="Remove"><X size={11} color={C.danger} /></button>
+                </span>
+              ))}
+            </div>
+          </Card>
         </div>
-      </Card>
+      </SettingsSection>
     </div>
   );
 }
@@ -1676,13 +1920,14 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
 
   // in "separate" mode, baby-friendly recipes are reserved for the dedicated baby slot only —
   // they're never eligible to fill a regular meal component or the freezer meal-of-the-day
-  const babyReservedOnly = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "separate";
+  const supperBabyFriendly = settings.babyFriendly?.supper;
+  const babyReservedOnly = supperBabyFriendly?.enabled && supperBabyFriendly.mode === "separate";
   const excludedForRegularMeal = (recipe) => babyReservedOnly && recipe.babyFriendly;
 
   // in "components" mode, specific meal components (e.g. protein, starch) must themselves
   // be filled by a baby-friendly recipe — no separate extra dish gets added
-  const babyRequiredComponents = settings.babyFriendly?.enabled && settings.babyFriendly.mode === "components"
-    ? settings.babyFriendly.components || []
+  const babyRequiredComponents = supperBabyFriendly?.enabled && supperBabyFriendly.mode === "components"
+    ? supperBabyFriendly.components || []
     : [];
   // true if placing this recipe would occupy a required-baby-friendly component slot
   // without actually being baby-friendly — applies to every placement path (locked,
@@ -1886,11 +2131,260 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
   return { plan: newPlan, warnings, usageHistory: newHistory, freezerStock: newStock };
 }
 
+// Auto-generation for breakfast/lunch/snack — much simpler than supper: no component
+// composition, freezer, or baby-friendly logic, just N recipes per day from that meal
+// type's own recipe pool, with a repetition mode the user picks per meal type in Settings.
+// dayCategories: { [dayName]: [category, ...] } — recipe categories already committed to that
+// day by OTHER meal types (supper's fresh plan, or other auto meal types earlier in this run),
+// so the meat/dairy rule can be enforced across the whole day, not just within one meal type.
+function generateAutoMealType({ mealType, days, composition, repetitionMode, recipes, settings, usageHistory, weekStart, dayCategories = {} }) {
+  const pool = recipes.filter((r) => (r.mealType || "supper") === mealType);
+  const newHistory = { ...usageHistory };
+  const warnings = [];
+  const assignments = {};
+  const label = MEAL_TYPE_META[mealType].label.toLowerCase();
+
+  const mealBabyFriendly = settings.babyFriendly?.[mealType];
+  const babyEnabled = !!mealBabyFriendly?.enabled;
+  const babyMode = mealBabyFriendly?.mode || "separate";
+  const babyComponents = babyMode === "components" ? mealBabyFriendly.components || [] : [];
+  const babyReservedOnly = babyEnabled && babyMode === "separate";
+
+  const eligibleFull = (recipe) => {
+    const tagKey = recipe.favorite ? "favorite" : recipe.easy ? "easy" : "regular";
+    const rule = settings.repetition[tagKey] || "none";
+    const minWeeks = REPEAT_WEEKS[rule];
+    const last = (newHistory[recipe.id] || []).slice(-1)[0];
+    return weeksSince(last) >= minWeeks;
+  };
+  const eligibleWeekOnly = (recipe) => !(newHistory[recipe.id] || []).includes(weekStart);
+
+  days.forEach((dayName) => {
+    const dayCats = [...(dayCategories[dayName] || [])];
+    const categoryOK = (recipe) => {
+      if (!settings.noMeatDairyMix || recipe.category === "parve") return true;
+      return !dayCats.some((c) => (c === "meat" && recipe.category === "dairy") || (c === "dairy" && recipe.category === "meat"));
+    };
+
+    const pickOne = (base) => {
+      let candidates = base.filter(categoryOK);
+      const repFiltered = repetitionMode === "full" ? candidates.filter(eligibleFull) : repetitionMode === "weekOnly" ? candidates.filter(eligibleWeekOnly) : candidates;
+      if (repFiltered.length) candidates = repFiltered;
+      if (candidates.length === 0) candidates = base; // last resort: drop every soft rule rather than leave the slot empty
+      if (candidates.length === 0) return null;
+      const favorites = candidates.filter((r) => r.favorite);
+      return repetitionMode === "full" && settings.prioritizeFavorite && favorites.length ? pickRandom(favorites) : pickRandom(candidates);
+    };
+
+    const dayPicks = [];
+    const pickedIds = new Set();
+
+    composition.forEach((component) => {
+      const isBabyRequired = babyMode === "components" && babyComponents.includes(component);
+      let base = pool.filter((r) => !pickedIds.has(r.id) && (r.type === component || (r.type === "combo" && r.comboTypes.includes(component))));
+      if (isBabyRequired) base = base.filter((r) => r.babyFriendly);
+      else if (babyReservedOnly) base = base.filter((r) => !r.babyFriendly);
+
+      const chosen = pickOne(base);
+      if (!chosen) { warnings.push(`No ${component} ${label} recipe available for ${dayName}`); return; }
+      dayPicks.push(chosen.id);
+      pickedIds.add(chosen.id);
+      dayCats.push(chosen.category);
+      newHistory[chosen.id] = [...(newHistory[chosen.id] || []), weekStart];
+    });
+
+    if (babyReservedOnly) {
+      const babyBase = pool.filter((r) => r.babyFriendly && !pickedIds.has(r.id));
+      const chosen = pickOne(babyBase);
+      if (chosen) {
+        dayPicks.push(chosen.id);
+        pickedIds.add(chosen.id);
+        dayCats.push(chosen.category);
+        newHistory[chosen.id] = [...(newHistory[chosen.id] || []), weekStart];
+      } else if (babyBase.length === 0) {
+        warnings.push(`No baby-friendly ${label} recipe available for ${dayName}`);
+      }
+    }
+
+    assignments[dayName] = dayPicks;
+  });
+
+  return { assignments, usageHistory: newHistory, warnings };
+}
+
 /* ---------------------------------------------------------------------- */
-/* Planner Tab                                                            */
+/* Planner Tab — meal cards, day tabs, recipe picker panel                */
 /* ---------------------------------------------------------------------- */
-function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory, setUsageHistory, freezerStock, setFreezerStock, setGroceryChecked }) {
-  const [selectedDays, setSelectedDays] = useState([...DAYS]);
+function AddMealTile({ accent, onClick, label }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl flex flex-col items-center justify-center gap-1.5"
+      style={{ minHeight: 108, border: `1px dashed ${C.line}`, background: C.white }}
+    >
+      <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: `${accent}1A` }}>
+        <Plus size={15} color={accent} />
+      </div>
+      <span className="text-xs font-medium text-center px-2" style={{ color: accent }}>{label}</span>
+    </button>
+  );
+}
+
+function ManualMealCard({ recipe, meta, onClick, onRemove }) {
+  const cost = recipe.ingredients.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
+  return (
+    <div className="rounded-xl relative card-hover cursor-pointer" style={{ background: C.white, border: `1px solid ${C.line}` }} onClick={onClick}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        className="absolute top-1.5 right-1.5 rounded-full flex items-center justify-center z-10"
+        style={{ width: 20, height: 20, background: "rgba(255,255,255,0.9)" }}
+        title="Remove"
+      >
+        <X size={12} color={C.danger} />
+      </button>
+      <div className="rounded-t-xl flex items-center justify-center" style={{ height: 52, background: `${meta.color}1A` }}>
+        <meta.icon size={20} color={meta.color} />
+      </div>
+      <div className="p-2">
+        <div className="text-xs font-semibold leading-snug" style={{ fontFamily: "'Poppins', sans-serif", color: C.ink }}>
+          {recipe.name || "Untitled recipe"}
+        </div>
+        {cost > 0 && (
+          <div className="text-[10px] mt-0.5" style={{ color: C.inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>~${cost.toFixed(2)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MealTypeSection({ mealType, recipes, recipeIds, onAdd, onSwap, onRemove, isAuto, onGenerate }) {
+  const meta = MEAL_TYPE_META[mealType];
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-2.5">
+        <meta.icon size={16} color={meta.color} />
+        <h3 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 15, color: C.ink }}>{meta.label}</h3>
+        <div className="flex-grow h-px" style={{ background: C.line }} />
+        {isAuto && (
+          <button onClick={onGenerate} title={`Auto-fill ${meta.label.toLowerCase()} for every day you've set up in Settings`} className="flex items-center gap-1 text-xs" style={{ color: C.inkSoft }}>
+            <RefreshCw size={12} /> Generate week
+          </button>
+        )}
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+        {recipeIds.map((id, idx) => {
+          const recipe = recipes.find((r) => r.id === id);
+          if (!recipe) return null;
+          return <ManualMealCard key={idx} recipe={recipe} meta={meta} onClick={() => onSwap(idx)} onRemove={() => onRemove(idx)} />;
+        })}
+        <AddMealTile accent={meta.color} onClick={onAdd} label={recipeIds.length === 0 ? `Add ${meta.label.toLowerCase()}` : "Add another"} />
+      </div>
+    </div>
+  );
+}
+
+function MealSlotCard({ slot, recipe, onSwap, onRemove, onView }) {
+  const accent = slot.isPrep && slot.component === "freezer-prep" ? C.dustyBlue : slot.isBaby ? C.plum : (TYPE_COLORS[slot.component] || C.forest);
+  const label = slot.isPrep && slot.component === "freezer-prep"
+    ? "freezer prep"
+    : slot.isBaby
+    ? "baby friendly"
+    : slot.coveredComponents && slot.coveredComponents.length > 1
+    ? `combo: ${slot.coveredComponents.join(" + ")}`
+    : slot.component;
+  return (
+    <div className="rounded-xl relative card-hover" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+      <div className="absolute top-1.5 right-1.5 flex gap-1 z-10">
+        {recipe && (
+          <button onClick={() => onView(recipe)} title="View recipe details" className="rounded-full flex items-center justify-center" style={{ width: 20, height: 20, background: "rgba(255,255,255,0.9)" }}>
+            <Eye size={12} color={C.inkSoft} />
+          </button>
+        )}
+        <button onClick={onRemove} title="Remove" className="rounded-full flex items-center justify-center" style={{ width: 20, height: 20, background: "rgba(255,255,255,0.9)" }}>
+          <X size={12} color={C.danger} />
+        </button>
+      </div>
+      <div className="rounded-t-xl flex items-center justify-center cursor-pointer" style={{ height: 56, background: `${accent}1A` }} onClick={onSwap}>
+        <ChefHat size={22} color={accent} />
+      </div>
+      <div className="p-2.5 cursor-pointer" onClick={onSwap}>
+        <div className="text-[9px] uppercase font-semibold mb-1" style={{ color: accent, letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif" }}>{label}</div>
+        <div className="text-xs font-semibold leading-snug" style={{ fontFamily: "'Poppins', sans-serif", color: C.ink }}>
+          {recipe?.name || "Choose a recipe"}
+        </div>
+        {recipe && (
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            <span
+              className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded text-white"
+              style={{ background: CATEGORY_COLORS[recipe.category] || C.inkSoft, fontFamily: "'Inter', sans-serif", letterSpacing: "0.03em" }}
+            >
+              {recipe.category}
+            </span>
+            {recipe.favorite && <Heart size={10} fill={C.danger} color={C.danger} />}
+            {recipe.easy && <Zap size={10} fill={C.forest} color={C.forest} />}
+            {recipe.freezer && <Snowflake size={10} color={C.dustyBlue} />}
+            {recipe.babyFriendly && <Baby size={10} color={C.plum} />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecipePickerPanel({ title, options, onPick, onClose }) {
+  const [query, setQuery] = useState("");
+  const filtered = options.filter((r) => !query || r.name.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end no-print" style={{ background: "rgba(46,42,34,0.35)" }} onClick={onClose}>
+      <div className="slide-in-right h-full w-full sm:w-96 flex flex-col" style={{ background: C.paper }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <h3 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 16, color: C.ink }}>{title}</h3>
+          <button onClick={onClose}><X size={18} color={C.inkSoft} /></button>
+        </div>
+        <div className="p-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-2.5" color={C.inkSoft} />
+            <input
+              className="pl-8 pr-3 py-2 rounded-lg text-sm w-full"
+              style={{ border: `1px solid ${C.line}`, background: C.white }}
+              placeholder="Search recipes…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="flex-grow overflow-y-auto px-3 pb-4 space-y-2">
+          {filtered.map((r) => {
+            const cost = r.ingredients.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
+            return (
+              <button
+                key={r.id}
+                onClick={() => onPick(r.id)}
+                className="w-full text-left rounded-lg p-2.5 flex items-center gap-2.5 card-hover"
+                style={{ background: C.white, border: `1px solid ${C.line}` }}
+              >
+                <div className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 36, height: 36, background: `${CATEGORY_COLORS[r.category] || C.forest}1A` }}>
+                  <ChefHat size={16} color={CATEGORY_COLORS[r.category] || C.forest} />
+                </div>
+                <div className="min-w-0 flex-grow">
+                  <div className="text-sm font-medium truncate" style={{ fontFamily: "'Poppins', sans-serif", color: C.ink }}>{r.name || "Untitled recipe"}</div>
+                  <div className="text-[11px]" style={{ color: C.inkSoft }}>{r.category}{cost > 0 && ` · ~$${cost.toFixed(2)}`}</div>
+                </div>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && <div className="text-xs italic text-center py-8" style={{ color: C.inkSoft }}>No matching recipes</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory, setUsageHistory, freezerStock, setFreezerStock, setGroceryChecked, manualMeals, setManualMeals }) {
+  const selectedDays = settings.supperDays && settings.supperDays.length ? settings.supperDays : DAYS; // configured in Settings
+  const [viewingDay, setViewingDay] = useState(DAYS[new Date().getDay()]);
+  const [picker, setPicker] = useState(null); // { title, options, onPick }
   const [useUpIngredients, setUseUpIngredients] = useState([]);
   const [useUpInput, setUseUpInput] = useState("");
   const [excludeCategories, setExcludeCategories] = useState([]); // e.g. ["meat", "fish", "dairy"]
@@ -1913,12 +2407,15 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
     return Array.from(set);
   }, [recipes]);
 
+  // auto-generation and swapping only ever draw from supper recipes — breakfast/lunch/snack
+  // are planned manually via their own sections below
+  const supperRecipes = useMemo(() => recipes.filter((r) => (r.mealType || "supper") === "supper"), [recipes]);
+
   const saveViewedRecipe = (r) => {
     setRecipes((prev) => prev.map((x) => (x.id === r.id ? r : x)));
     setViewingRecipe(null);
   };
 
-  const toggleDay = (d) => setSelectedDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
   const toggleExclude = (cat) => setExcludeCategories((prev) => (prev.includes(cat) ? prev.filter((x) => x !== cat) : [...prev, cat]));
 
   const addUseUpIngredient = () => {
@@ -1936,10 +2433,14 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
     return weekBaselineRef.current;
   };
 
-  const stripWeek = (history, weekStart) => {
-    const cleaned = {};
-    Object.entries(history).forEach(([id, dates]) => {
-      cleaned[id] = dates.filter((d) => d !== weekStart);
+  // scoped to a set of recipe ids so regenerating one meal type never wipes another's
+  // usage history — usageHistory is shared across supper/breakfast/lunch/snack since
+  // recipe ids never collide across meal types
+  const stripWeek = (history, weekStart, recipeIds) => {
+    const idSet = new Set(recipeIds);
+    const cleaned = { ...history };
+    idSet.forEach((id) => {
+      if (cleaned[id]) cleaned[id] = cleaned[id].filter((d) => d !== weekStart);
     });
     return cleaned;
   };
@@ -1947,10 +2448,10 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
   const doGenerate = () => {
     const weekStart = isoWeek();
     const baseline = getBaseline(weekStart);
-    const cleanedHistory = stripWeek(usageHistory, weekStart);
+    const cleanedHistory = stripWeek(usageHistory, weekStart, supperRecipes.map((r) => r.id));
     const result = generatePlan({
       selectedDays: DAYS.filter((d) => selectedDays.includes(d)),
-      recipes,
+      recipes: supperRecipes,
       settings,
       usageHistory: cleanedHistory,
       freezerStock: baseline.freezerStock,
@@ -1962,6 +2463,111 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
     setUsageHistory(result.usageHistory);
     setFreezerStock(result.freezerStock);
     setWarnings(result.warnings);
+  };
+
+  // release this meal type's currently-assigned recipes' usage for the week, so re-running
+  // Generate doesn't count last run's picks against this run's eligibility
+  const releaseMealTypeWeek = (history, mealType, weekStart) => {
+    let released = { ...history };
+    Object.values(manualMeals).forEach((day) => {
+      (day[mealType] || []).forEach((recipeId) => {
+        const dates = released[recipeId];
+        if (dates) {
+          const idx = dates.lastIndexOf(weekStart);
+          if (idx !== -1) released[recipeId] = [...dates.slice(0, idx), ...dates.slice(idx + 1)];
+        }
+      });
+    });
+    return released;
+  };
+
+  // categories already committed to each day by every OTHER meal type — feeds the meat/dairy
+  // rule so a whole day is checked, not just one meal type in isolation
+  const dayCategoriesExcluding = (days, excludeMealType, planOverride) => {
+    const result = {};
+    days.forEach((d) => {
+      const cats = [];
+      ((planOverride ?? plan)?.days[d]?.slots || []).forEach((slot) => {
+        const r = recipes.find((x) => x.id === slot.recipeId);
+        if (r) cats.push(r.category);
+      });
+      AUTO_MEAL_TYPES.forEach((mt) => {
+        if (mt === excludeMealType) return;
+        (manualMeals[d]?.[mt] || []).forEach((id) => {
+          const r = recipes.find((x) => x.id === id);
+          if (r) cats.push(r.category);
+        });
+      });
+      result[d] = cats;
+    });
+    return result;
+  };
+
+  const generateAutoMeal = (mealType) => {
+    const cfg = settings.autoMeals[mealType];
+    if (!cfg.days.length || !cfg.composition.length) return;
+    const weekStart = isoWeek();
+    const releasedHistory = releaseMealTypeWeek(usageHistory, mealType, weekStart);
+    const dayCategories = dayCategoriesExcluding(cfg.days, mealType);
+    const result = generateAutoMealType({ mealType, days: cfg.days, composition: cfg.composition, repetitionMode: cfg.repetition, recipes, settings, usageHistory: releasedHistory, weekStart, dayCategories });
+    setManualMeals((prev) => {
+      const next = { ...prev };
+      cfg.days.forEach((d) => { next[d] = { ...next[d], [mealType]: result.assignments[d] || [] }; });
+      return next;
+    });
+    setUsageHistory(result.usageHistory);
+    setWarnings(result.warnings);
+  };
+
+  // combined trigger for the top-of-page "Generate All" button — computes supper plus every
+  // auto-enabled meal type in plain variables first, then commits state once, so each meal
+  // type's usage-history update doesn't clobber the others (they'd race if each called its
+  // own setUsageHistory off a stale closure of the same shared state)
+  const generateAllMeals = () => {
+    const weekStart = isoWeek();
+    const baseline = getBaseline(weekStart);
+    let history = stripWeek(usageHistory, weekStart, supperRecipes.map((r) => r.id));
+    const supperResult = generatePlan({
+      selectedDays: DAYS.filter((d) => selectedDays.includes(d)),
+      recipes: supperRecipes,
+      settings,
+      usageHistory: history,
+      freezerStock: baseline.freezerStock,
+      useUpIngredients,
+      excludeCategories,
+      weekStart,
+    });
+    history = supperResult.usageHistory;
+
+    const nextManualMeals = { ...manualMeals };
+    let allWarnings = [...supperResult.warnings];
+
+    // seed from supper's freshly-generated plan (not the old committed one), then let each
+    // auto meal type's picks feed forward into the next
+    const dayCategories = {};
+    Object.entries(supperResult.plan.days).forEach(([d, day]) => {
+      dayCategories[d] = day.slots.map((s) => supperRecipes.find((r) => r.id === s.recipeId)?.category).filter(Boolean);
+    });
+
+    AUTO_MEAL_TYPES.forEach((mt) => {
+      const cfg = settings.autoMeals[mt];
+      if (!cfg.days.length || !cfg.composition.length) return;
+      const releasedHistory = releaseMealTypeWeek(history, mt, weekStart);
+      const result = generateAutoMealType({ mealType: mt, days: cfg.days, composition: cfg.composition, repetitionMode: cfg.repetition, recipes, settings, usageHistory: releasedHistory, weekStart, dayCategories });
+      history = result.usageHistory;
+      cfg.days.forEach((d) => {
+        nextManualMeals[d] = { ...nextManualMeals[d], [mt]: result.assignments[d] || [] };
+        const picked = (result.assignments[d] || []).map((id) => recipes.find((r) => r.id === id)?.category).filter(Boolean);
+        dayCategories[d] = [...(dayCategories[d] || []), ...picked];
+      });
+      allWarnings = [...allWarnings, ...result.warnings];
+    });
+
+    setPlan(supperResult.plan);
+    setManualMeals(nextManualMeals);
+    setUsageHistory(history);
+    setFreezerStock(supperResult.freezerStock);
+    setWarnings(allWarnings);
   };
 
   const clear = () => {
@@ -2003,7 +2609,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
 
     const result = generatePlan({
       selectedDays: [dayName],
-      recipes,
+      recipes: supperRecipes,
       settings,
       usageHistory: cleanedHistory,
       freezerStock: revertedFreezerStock,
@@ -2108,7 +2714,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
         usedElsewhere.add(s.recipeId);
       });
     });
-    return recipes.filter((r) => {
+    return supperRecipes.filter((r) => {
       if (r.id === slot.recipeId) return false; // already shown as the current selection
       if (usedElsewhere.has(r.id)) return false;
       if (slot.isPrep && slot.component === "freezer-prep") return r.freezer;
@@ -2117,73 +2723,80 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
     });
   };
 
+  const addManualMeal = (dayName, mealType, recipeId) => {
+    setManualMeals((prev) => ({
+      ...prev,
+      [dayName]: { ...prev[dayName], [mealType]: [...(prev[dayName]?.[mealType] || []), recipeId] },
+    }));
+  };
+  const removeManualMeal = (dayName, mealType, index) => {
+    setManualMeals((prev) => ({
+      ...prev,
+      [dayName]: { ...prev[dayName], [mealType]: (prev[dayName]?.[mealType] || []).filter((_, i) => i !== index) },
+    }));
+  };
+  const swapManualMeal = (dayName, mealType, index, recipeId) => {
+    setManualMeals((prev) => {
+      const arr = [...(prev[dayName]?.[mealType] || [])];
+      arr[index] = recipeId;
+      return { ...prev, [dayName]: { ...prev[dayName], [mealType]: arr } };
+    });
+  };
+
+  const openSupperPicker = (dayName, slotIdx) => {
+    setPicker({
+      title: "Swap this meal",
+      options: getSwapOptions(dayName, slotIdx),
+      onPick: (recipeId) => { swapSlotRecipe(dayName, slotIdx, recipeId); setPicker(null); },
+    });
+  };
+  const openManualPicker = (dayName, mealType, index = null) => {
+    const used = new Set((manualMeals[dayName]?.[mealType] || []).filter((_, i) => i !== index));
+    setPicker({
+      title: index === null ? `Add ${MEAL_TYPE_META[mealType].label.toLowerCase()}` : `Swap ${MEAL_TYPE_META[mealType].label.toLowerCase()}`,
+      options: recipes.filter((r) => (r.mealType || "supper") === mealType && !used.has(r.id)),
+      onPick: (recipeId) => {
+        if (index === null) addManualMeal(dayName, mealType, recipeId);
+        else swapManualMeal(dayName, mealType, index, recipeId);
+        setPicker(null);
+      },
+    });
+  };
+
+  const recipeCost = (recipeId) => {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return 0;
+    return recipe.ingredients.reduce((s, i) => s + (parseFloat(i.price) || 0), 0);
+  };
+
+  // calendar date-of-month for each day tab, based on the current week (Sunday–Saturday, local time)
+  const weekDates = useMemo(() => {
+    const now = new Date();
+    const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    return DAYS.map((_, i) => new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + i).getDate());
+  }, []);
+
+  const dayTotalCost = useMemo(() => {
+    const supperCost = (plan?.days[viewingDay]?.slots || []).reduce((sum, slot) => sum + recipeCost(slot.recipeId), 0);
+    const manualCost = ["breakfast", "lunch", "snack"].reduce(
+      (sum, mt) => sum + (manualMeals[viewingDay]?.[mt] || []).reduce((s, id) => s + recipeCost(id), 0),
+      0
+    );
+    return supperCost + manualCost;
+  }, [plan, viewingDay, manualMeals, recipes]);
+
   return (
     <div>
-      <div className="flex flex-wrap items-stretch gap-3" style={{ marginBottom: 16 }}>
-        <div className="rounded-xl" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14 }}>
-          <SectionLabel>Days to plan</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map((d) => (
-              <Chip key={d} active={selectedDays.includes(d)} onClick={() => toggleDay(d)}>{d.slice(0, 3)}</Chip>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl flex flex-col justify-center" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14, width: "min(300px, calc(100vw - 48px))" }}>
-          <SectionLabel>Use up ingredients this week</SectionLabel>
-          <div className="relative">
-            <div
-              ref={useUpScrollRef}
-              className="no-scrollbar flex items-center gap-1.5 px-2 py-1 rounded-lg overflow-x-auto"
-              style={{ border: `1px solid ${C.line}`, background: C.white, width: "100%" }}
-            >
-              <input
-                className="text-sm bg-transparent shrink-0"
-                style={{ border: "none", outline: "none", width: 110, padding: 0 }}
-                placeholder={useUpIngredients.length === 0 ? "e.g. spinach" : "Add more…"}
-                value={useUpInput}
-                onChange={(e) => setUseUpInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUseUpIngredient(); } }}
-              />
-              {useUpIngredients.map((ing) => (
-                <span key={ing} className="text-xs px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
-                  {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
-                </span>
-              ))}
-            </div>
-            {useUpOverflowing && (
-              <button
-                type="button"
-                onClick={() => useUpScrollRef.current?.scrollBy({ left: 100, behavior: "smooth" })}
-                className="absolute top-1/2 -translate-y-1/2 flex items-center"
-                style={{ right: 4, background: "linear-gradient(to right, transparent, #FFFFFF 60%)", paddingLeft: 14, height: "100%", cursor: "pointer" }}
-                title="Scroll for more"
-              >
-                <ChevronRight size={14} color={C.inkSoft} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-xl" style={{ background: C.white, border: `1px solid ${C.line}`, padding: 14 }}>
-          <SectionLabel>This week, avoid</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {["meat", "fish", "dairy"].map((cat) => (
-              <Chip key={cat} active={excludeCategories.includes(cat)} onClick={() => toggleExclude(cat)} color={C.rust}>
-                No {cat}
-              </Chip>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex gap-2 w-full sm:w-auto sm:ml-auto self-center">
-          <button onClick={doGenerate} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: C.forest }}>
-            <Calendar size={15} /> Generate
-          </button>
-          <button onClick={clear} className="flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
-            Clear
-          </button>
-        </div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 18, color: C.ink }}>This week</h2>
+        <button
+          onClick={generateAllMeals}
+          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
+          style={{ background: C.forestDark }}
+          title="Generate supper plus every meal type you've set to auto-fill in Settings"
+        >
+          <Sparkles size={15} /> Generate All
+        </button>
       </div>
 
       {warnings.length > 0 && (
@@ -2197,75 +2810,156 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
         </Card>
       )}
 
-      {plan ? (
-        <div className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1">
-          {DAYS.filter((d) => plan.days[d]).map((dayName) => (
-            <div key={dayName} className="rounded-xl flex-shrink-0" style={{ width: 220, background: C.white, border: `1px solid ${C.line}` }}>
-              <div className="px-3 py-2.5 rounded-t-xl flex items-center justify-between" style={{ background: C.forestDark }}>
-                <span className="text-sm font-semibold text-white" style={{ fontFamily: "'Poppins', sans-serif" }}>{dayName}</span>
-                <button onClick={() => regenerateDay(dayName)} title="Regenerate this day">
-                  <RefreshCw size={13} color="#fff" />
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-5 no-scrollbar">
+        {DAYS.map((d, idx) => (
+          <button
+            key={d}
+            onClick={() => setViewingDay(d)}
+            className="flex flex-col items-center justify-center rounded-xl shrink-0 transition-colors"
+            style={{
+              minWidth: 62,
+              height: 52,
+              background: viewingDay === d ? C.forest : C.white,
+              border: `1px solid ${viewingDay === d ? C.forest : C.line}`,
+            }}
+          >
+            <span
+              className="text-[10px] font-semibold uppercase"
+              style={{ color: viewingDay === d ? "#fff" : C.inkSoft, letterSpacing: "0.06em", fontFamily: "'Inter', sans-serif" }}
+            >
+              {d.slice(0, 3)}
+            </span>
+            <span
+              className="text-[13px] font-semibold leading-tight"
+              style={{ color: viewingDay === d ? "#fff" : C.ink, fontFamily: "'Poppins', sans-serif" }}
+            >
+              {weekDates[idx]}
+            </span>
+            {plan?.days[d] && (
+              <span className="rounded-full mt-0.5" style={{ width: 4, height: 4, background: viewingDay === d ? "#fff" : C.forest }} />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {dayTotalCost > 0 && (
+        <div className="text-xs mb-4" style={{ color: C.inkSoft }}>
+          Estimated cost for {viewingDay}:{" "}
+          <span style={{ color: C.forestDark, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>~${dayTotalCost.toFixed(2)}</span>
+        </div>
+      )}
+
+      <div className="space-y-7">
+        {["breakfast", "lunch", "snack"].map((mealType) => (
+          <MealTypeSection
+            key={mealType}
+            mealType={mealType}
+            recipes={recipes}
+            recipeIds={manualMeals[viewingDay]?.[mealType] || []}
+            onAdd={() => openManualPicker(viewingDay, mealType)}
+            onSwap={(idx) => openManualPicker(viewingDay, mealType, idx)}
+            onRemove={(idx) => removeManualMeal(viewingDay, mealType, idx)}
+            isAuto={settings.autoMeals[mealType].days.length > 0 && settings.autoMeals[mealType].composition.length > 0}
+            onGenerate={() => generateAutoMeal(mealType)}
+          />
+        ))}
+
+        <div>
+          <div className="flex items-center gap-3 mb-2.5">
+            <ChefHat size={16} color={C.forest} />
+            <h3 style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 15, color: C.ink }}>Supper</h3>
+            <div className="flex-grow h-px" style={{ background: C.line }} />
+            {plan?.days[viewingDay] && (
+              <button onClick={() => regenerateDay(viewingDay)} title="Regenerate this day" className="flex items-center gap-1 text-xs" style={{ color: C.inkSoft }}>
+                <RefreshCw size={12} /> Regenerate
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-xl flex flex-wrap items-center gap-3 mb-4" style={{ background: C.white, border: `1px solid ${C.line}`, padding: "10px 14px" }}>
+            <div className="relative">
+              <div
+                ref={useUpScrollRef}
+                className="no-scrollbar flex items-center gap-1.5 px-2 py-1 rounded-lg overflow-x-auto"
+                style={{ border: `1px solid ${C.line}`, background: C.white, width: "min(240px, calc(100vw - 90px))" }}
+              >
+                <input
+                  className="text-xs bg-transparent shrink-0"
+                  style={{ border: "none", outline: "none", width: 90, padding: 0 }}
+                  placeholder={useUpIngredients.length === 0 ? "Use up: e.g. spinach" : "Add more…"}
+                  value={useUpInput}
+                  onChange={(e) => setUseUpInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUseUpIngredient(); } }}
+                />
+                {useUpIngredients.map((ing) => (
+                  <span key={ing} className="text-xs px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ background: C.paperDark, color: C.ink }}>
+                    {ing} <button onClick={() => removeUseUpIngredient(ing)}><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+              {useUpOverflowing && (
+                <button
+                  type="button"
+                  onClick={() => useUpScrollRef.current?.scrollBy({ left: 100, behavior: "smooth" })}
+                  className="absolute top-1/2 -translate-y-1/2 flex items-center"
+                  style={{ right: 4, background: "linear-gradient(to right, transparent, #FFFFFF 60%)", paddingLeft: 14, height: "100%", cursor: "pointer" }}
+                  title="Scroll for more"
+                >
+                  <ChevronRight size={14} color={C.inkSoft} />
                 </button>
-              </div>
-              <div className="p-2.5 space-y-2">
-                {plan.days[dayName].slots.map((slot, i) => {
-                  const recipe = recipes.find((r) => r.id === slot.recipeId);
-                  const accent = slot.isPrep && slot.component === "freezer-prep" ? C.dustyBlue : slot.isBaby ? C.plum : (TYPE_COLORS[slot.component] || C.forest);
-                  return (
-                    <div key={i} className="rounded-lg p-2 relative" style={{ background: C.paperDark, borderLeft: `3px solid ${accent}` }}>
-                      <div className="text-[10px] uppercase font-semibold mb-0.5" style={{ color: accent, fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>
-                        {slot.isPrep && slot.component === "freezer-prep"
-                          ? "freezer prep"
-                          : slot.isBaby
-                          ? "baby friendly"
-                          : slot.coveredComponents && slot.coveredComponents.length > 1
-                          ? `combo: ${slot.coveredComponents.join(" + ")}`
-                          : slot.component}
-                      </div>
-                      <select
-                        className="w-full text-xs bg-transparent font-medium pr-4"
-                        style={{ color: C.ink, fontFamily: "'Poppins', sans-serif" }}
-                        value={slot.recipeId}
-                        onChange={(e) => swapSlotRecipe(dayName, i, e.target.value)}
-                      >
-                        {recipe && <option value={recipe.id}>{recipe.name}</option>}
-                        {getSwapOptions(dayName, i).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                      </select>
-                      {recipe && (
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span
-                            className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded text-white"
-                            style={{ background: CATEGORY_COLORS[recipe.category] || C.inkSoft, fontFamily: "'Inter', sans-serif", letterSpacing: "0.03em" }}
-                          >
-                            {recipe.category}
-                          </span>
-                          {recipe.favorite && <Heart size={11} fill={C.danger} color={C.danger} />}
-                          {recipe.easy && <Zap size={11} fill={C.forest} color={C.forest} />}
-                          {recipe.freezer && <Snowflake size={11} color={C.dustyBlue} />}
-                          {recipe.babyFriendly && <Baby size={11} color={C.plum} />}
-                        </div>
-                      )}
-                      {recipe && (
-                        <button onClick={() => setViewingRecipe(recipe)} className="absolute top-1.5 right-6" title="View recipe details">
-                          <Eye size={12} color={C.inkSoft} />
-                        </button>
-                      )}
-                      <button onClick={() => removeSlot(dayName, i)} className="absolute top-1.5 right-1.5">
-                        <X size={12} color={C.danger} />
-                      </button>
-                    </div>
-                  );
-                })}
-                {plan.days[dayName].slots.length === 0 && <div className="text-xs italic text-center py-4" style={{ color: C.inkSoft }}>Nothing planned</div>}
-              </div>
+              )}
             </div>
-          ))}
+
+            <div className="flex flex-wrap gap-1.5">
+              {["meat", "fish", "dairy"].map((cat) => (
+                <Chip key={cat} active={excludeCategories.includes(cat)} onClick={() => toggleExclude(cat)} color={C.rust}>
+                  No {cat}
+                </Chip>
+              ))}
+            </div>
+
+            <div className="flex gap-2 sm:ml-auto">
+              <button onClick={doGenerate} className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: C.forest }}>
+                <Calendar size={13} /> Generate
+              </button>
+              <button onClick={clear} className="px-3.5 py-1.5 rounded-lg text-xs" style={{ border: `1px solid ${C.line}`, color: C.inkSoft }}>
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {plan?.days[viewingDay] ? (
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+              {plan.days[viewingDay].slots.map((slot, i) => (
+                <MealSlotCard
+                  key={i}
+                  slot={slot}
+                  recipe={recipes.find((r) => r.id === slot.recipeId)}
+                  onSwap={() => openSupperPicker(viewingDay, i)}
+                  onRemove={() => removeSlot(viewingDay, i)}
+                  onView={setViewingRecipe}
+                />
+              ))}
+              {plan.days[viewingDay].slots.length === 0 && (
+                <div className="text-xs italic text-center py-4 col-span-full" style={{ color: C.inkSoft }}>Nothing planned</div>
+              )}
+            </div>
+          ) : (
+            <div className="fade-in text-center py-10 flex flex-col items-center gap-2" style={{ color: C.inkSoft }}>
+              <Calendar size={24} color={C.line} />
+              <div className="text-sm">Pick your days above and hit Generate to build supper for the week.</div>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="fade-in text-center py-20 flex flex-col items-center gap-2" style={{ color: C.inkSoft }}>
-          <Calendar size={28} color={C.line} />
-          <div>Pick your days and hit Generate to build the week.</div>
-        </div>
+      </div>
+
+      {picker && (
+        <RecipePickerPanel
+          title={picker.title}
+          options={picker.options}
+          onPick={picker.onPick}
+          onClose={() => setPicker(null)}
+        />
       )}
 
       {pendingSlotUndo && (
@@ -2282,7 +2976,7 @@ function PlannerTab({ recipes, setRecipes, settings, plan, setPlan, usageHistory
           recipes={recipes}
           categoryMemory={categoryMemory}
           ingredientCategories={settings.ingredientCategories}
-          babyFriendlyEnabled={settings.babyFriendly?.enabled}
+          babyFriendlyEnabled={Object.values(settings.babyFriendly).some((c) => c.enabled)}
           onSave={saveViewedRecipe}
           onClose={() => setViewingRecipe(null)}
         />
@@ -2303,6 +2997,7 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
   const [usageHistory, setUsageHistory] = useState({});
   const [freezerStock, setFreezerStock] = useState({});
   const [groceryChecked, setGroceryChecked] = useState({});
+  const [manualMeals, setManualMeals] = useState(buildEmptyManualMeals());
   const [loaded, setLoaded] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [assistantDraft, setAssistantDraft] = useState(null);
@@ -2319,8 +3014,11 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
       const h = row?.usage_history ?? {};
       const f = row?.freezer_stock ?? {};
       const gc = row?.grocery_checked ?? {};
+      const loadedMM = row?.manual_meals || {};
+      const mm = {};
+      DAYS.forEach((d) => { mm[d] = { breakfast: [], lunch: [], snack: [], ...(loadedMM[d] || {}) }; });
 
-      setRecipes(r);
+      setRecipes(r.map((recipe) => ({ mealType: "supper", ...recipe })));
       const migratedRules = {};
       DAYS.forEach((d) => {
         const old = (s.weeklyDayRules || {})[d];
@@ -2334,15 +3032,27 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
           migratedRules[d] = old || { category: "", simplicity: "" };
         }
       });
-      // migrate legacy baby-friendly modes ("onlyIfMissing" / "always") to "separate"
-      const babyFriendly = s.babyFriendly
-        ? { ...DEFAULT_SETTINGS.babyFriendly, ...s.babyFriendly, mode: ["separate", "components"].includes(s.babyFriendly.mode) ? s.babyFriendly.mode : "separate" }
-        : DEFAULT_SETTINGS.babyFriendly;
-      setSettings({ ...DEFAULT_SETTINGS, ...s, weeklyDayRules: migratedRules, babyFriendly });
+      // migrate: legacy shape was one flat {enabled,mode,components} object shared by every
+      // meal type; also normalizes old modes ("onlyIfMissing" / "always") to "separate"
+      const legacyFlatBabyFriendly = s.babyFriendly && "enabled" in s.babyFriendly ? s.babyFriendly : null;
+      const babyFriendly = {};
+      MEAL_TYPE_OPTIONS.forEach((mt) => {
+        const saved = mt === "supper" && legacyFlatBabyFriendly ? legacyFlatBabyFriendly : s.babyFriendly?.[mt];
+        babyFriendly[mt] = saved
+          ? { ...DEFAULT_SETTINGS.babyFriendly[mt], ...saved, mode: ["separate", "components"].includes(saved.mode) ? saved.mode : "separate" }
+          : DEFAULT_SETTINGS.babyFriendly[mt];
+      });
+      const autoMeals = {
+        breakfast: { ...DEFAULT_SETTINGS.autoMeals.breakfast, ...(s.autoMeals?.breakfast || {}) },
+        lunch: { ...DEFAULT_SETTINGS.autoMeals.lunch, ...(s.autoMeals?.lunch || {}) },
+        snack: { ...DEFAULT_SETTINGS.autoMeals.snack, ...(s.autoMeals?.snack || {}) },
+      };
+      setSettings({ ...DEFAULT_SETTINGS, ...s, weeklyDayRules: migratedRules, babyFriendly, autoMeals });
       setPlan(p);
       setUsageHistory(h);
       setFreezerStock(f);
       setGroceryChecked(gc);
+      setManualMeals(mm);
       setLoaded(true);
     })();
   }, [userId]);
@@ -2361,6 +3071,7 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
   useEffect(() => { if (loaded) persist("usageHistory", usageHistory); }, [usageHistory, loaded]);
   useEffect(() => { if (loaded) persist("freezerStock", freezerStock); }, [freezerStock, loaded]);
   useEffect(() => { if (loaded) persist("groceryChecked", groceryChecked); }, [groceryChecked, loaded]);
+  useEffect(() => { if (loaded) persist("manualMeals", manualMeals); }, [manualMeals, loaded]);
 
   const categoryMemory = useMemo(() => {
     const set = new Set();
@@ -2370,6 +3081,18 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
 
   const handleLogout = () => { supabase.auth.signOut(); };
   const dismissWelcome = () => setSettings((s) => ({ ...s, hasSeenWelcome: true }));
+
+  // Changing plans for an already-paid subscriber goes through Stripe's own billing
+  // portal (modifies the existing subscription) — never a fresh checkout, which would
+  // create a second, independently-billing subscription instead of upgrading the first.
+  const openBillingPortal = async () => {
+    const { data, error } = await supabase.functions.invoke("billing-portal", { body: { returnUrl: window.location.origin } });
+    if (error || data?.error) {
+      alert(data?.error || error?.message || "Couldn't open billing — try again.");
+      return;
+    }
+    window.location.href = data.url;
+  };
 
   const saveAssistantDraft = (r) => {
     setRecipes((prev) => {
@@ -2391,7 +3114,6 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
   return (
     <div style={{ background: C.paper, minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
         * { box-sizing: border-box; }
 
         select, input, textarea, button { font-family: inherit; }
@@ -2435,6 +3157,11 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
         @keyframes slideUp {
           from { opacity: 0; transform: translate(-50%, 12px); }
           to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .slide-in-right { animation: slideInRight .2s cubic-bezier(.2,.8,.3,1) both; }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(24px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin-slow { animation: spin 1.4s linear infinite; }
@@ -2498,9 +3225,9 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
       </div>
 
       <div className="px-3 sm:px-6 py-6 max-w-7xl mx-auto" style={{ background: C.paper }}>
-        {tab === "recipes" && <RecipesTab recipes={recipes} setRecipes={setRecipes} categoryMemory={categoryMemory} ingredientCategories={settings.ingredientCategories} babyFriendlyEnabled={settings.babyFriendly?.enabled} canUpload={hasProAccess} onUpgradeClick={() => setShowUpgrade(true)} />}
+        {tab === "recipes" && <RecipesTab recipes={recipes} setRecipes={setRecipes} categoryMemory={categoryMemory} ingredientCategories={settings.ingredientCategories} babyFriendlyEnabled={Object.values(settings.babyFriendly).some((c) => c.enabled)} canUpload={hasProAccess} onUpgradeClick={() => setShowUpgrade(true)} />}
         {tab === "grocery" && (
-          <GroceryListTab plan={plan} recipes={recipes} settings={settings} groceryChecked={groceryChecked} setGroceryChecked={setGroceryChecked} />
+          <GroceryListTab plan={plan} recipes={recipes} settings={settings} groceryChecked={groceryChecked} setGroceryChecked={setGroceryChecked} manualMeals={manualMeals} />
         )}
         {tab === "planner" && (
           <PlannerTab
@@ -2514,6 +3241,8 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
             freezerStock={freezerStock}
             setFreezerStock={setFreezerStock}
             setGroceryChecked={setGroceryChecked}
+            manualMeals={manualMeals}
+            setManualMeals={setManualMeals}
           />
         )}
         {tab === "settings" && <SettingsTab settings={settings} setSettings={setSettings} />}
@@ -2524,7 +3253,10 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
         <a href="mailto:support@plantodish.com" style={{ color: C.forest, textDecoration: "underline" }}>
           support@plantodish.com
         </a>{" "}
-        anytime.
+        anytime. ·{" "}
+        <a href="/privacy.html" style={{ color: C.inkSoft, textDecoration: "underline" }}>
+          Privacy Policy
+        </a>
       </div>
 
       {!settings.hasSeenWelcome && <WelcomeGuide onClose={dismissWelcome} />}
@@ -2535,7 +3267,7 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
           recipes={recipes}
           categoryMemory={categoryMemory}
           ingredientCategories={settings.ingredientCategories}
-          babyFriendlyEnabled={settings.babyFriendly?.enabled}
+          babyFriendlyEnabled={Object.values(settings.babyFriendly).some((c) => c.enabled)}
           onSave={saveAssistantDraft}
           onClose={() => setAssistantDraft(null)}
           initialAIGenerated={true}
@@ -2543,7 +3275,7 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
       )}
 
       {showUpgrade && (
-        <Pricing mode="upgrade" userEmail={session.user.email} currentTier={tier} onClose={() => setShowUpgrade(false)} />
+        <Pricing mode="upgrade" userEmail={session.user.email} currentTier={tier} isPaid={isPaid} onUpgradeRedirect={openBillingPortal} onClose={() => setShowUpgrade(false)} />
       )}
 
       {showAccount && (

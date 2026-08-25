@@ -144,7 +144,7 @@ export default function App() {
   if (!session) return <Auth />;
   if (confirmingPayment) return <LoadingScreen label="confirming your payment…" />;
   if (!provisioned) return <LoadingScreen label="setting up your account…" />;
-  if (account.trialExpired) return <Pricing mode="trial_expired" userEmail={session.user.email} />;
+  if (account.trialExpired) return <Pricing mode="trial_expired" userEmail={session.user.email} isPaid={false} />;
 
   // Grandfathered paid accounts (is_paid set manually, no tier chosen) get full access,
   // same as active trials — only an explicit "basic" tier restricts Pro features.
