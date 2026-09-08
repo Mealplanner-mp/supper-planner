@@ -67,12 +67,6 @@ const AUTO_REPETITION_OPTIONS = [
   { key: "weekOnly", label: "This week only" },
   { key: "none", label: "No restriction" },
 ];
-const SIMPLICITY_OPTIONS = [
-  { key: "crockpot", label: "Crock pot" },
-  { key: "under20", label: "Under 20 min" },
-  { key: "under30", label: "Under 30 min" },
-  { key: "onepot", label: "One pot" },
-];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const COMPONENT_OPTIONS = ["protein", "starch", "veg", "soup", "dessert"];
 const UNIT_OPTIONS = ["g", "kg", "ml", "l", "tsp", "tbsp", "cup", "fl oz", "oz", "lb", "pinch", "unit", "bunch", "can", "package"];
@@ -102,7 +96,7 @@ const DEFAULT_SETTINGS = {
   prioritizeEasy: false,
   pantryStaples: ["salt", "pepper", "olive oil", "sugar", "flour"],
   freezer: { day: "Sunday", frequency: "biweekly" },
-  weeklyDayRules: DAYS.reduce((acc, d) => ({ ...acc, [d]: { category: "", simplicity: "" } }), {}),
+  weeklyDayRules: DAYS.reduce((acc, d) => ({ ...acc, [d]: { category: "" } }), {}),
   ingredientCategories: [...INGREDIENT_CATEGORIES],
   // one baby-friendly config per meal type — mode: "separate" | "components"
   babyFriendly: {
@@ -134,7 +128,6 @@ const emptyRecipe = () => ({
   freezer: false,
   freezerServings: 4,
   freezerPrepMode: "withMeal", // "withMeal" | "separate"
-  simplicity: [],
   lockedDay: "",
   createsLeftovers: false,
   usesLeftoverFrom: "",
@@ -153,7 +146,6 @@ function recipeFromAIDraft(parsed) {
     type: TYPE_OPTIONS.includes(parsed.type) ? parsed.type : base.type,
     comboTypes: Array.isArray(parsed.comboTypes) ? parsed.comboTypes.filter((c) => COMPONENT_OPTIONS.includes(c)) : base.comboTypes,
     category: CATEGORY_OPTIONS.includes(parsed.category) ? parsed.category : base.category,
-    simplicity: Array.isArray(parsed.simplicity) ? parsed.simplicity.filter((s) => SIMPLICITY_OPTIONS.some((o) => o.key === s)) : base.simplicity,
     ingredients: Array.isArray(parsed.ingredients)
       ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "", price: "" }))
       : base.ingredients,
@@ -441,11 +433,6 @@ function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, baby
           {recipe.type === "combo" && recipe.comboTypes.map((t) => (
             <span key={t} className="text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold" style={{ background: C.paperDark, color: C.inkSoft, fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>{t}</span>
           ))}
-          {recipe.simplicity.map((s) => (
-            <span key={s} className="text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold" style={{ background: C.paperDark, color: C.inkSoft, fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>
-              {SIMPLICITY_OPTIONS.find((o) => o.key === s)?.label}
-            </span>
-          ))}
           {recipe.lockedDay && (
             <span className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5 uppercase font-semibold" style={{ background: "#FCE4DC", color: C.rust, fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>
               <Lock size={9} /> {recipe.lockedDay.slice(0, 3)}
@@ -507,10 +494,6 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
     const has = r.comboTypes.includes(t);
     set({ comboTypes: has ? r.comboTypes.filter((x) => x !== t) : [...r.comboTypes, t] });
   };
-  const toggleSimplicity = (k) => {
-    const has = r.simplicity.includes(k);
-    set({ simplicity: has ? r.simplicity.filter((x) => x !== k) : [...r.simplicity, k] });
-  };
 
   const runAISearch = async () => {
     if (!aiQuery.trim()) return;
@@ -528,7 +511,6 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
         type: TYPE_OPTIONS.includes(parsed.type) ? parsed.type : r.type,
         comboTypes: Array.isArray(parsed.comboTypes) ? parsed.comboTypes.filter((c) => COMPONENT_OPTIONS.includes(c)) : r.comboTypes,
         category: CATEGORY_OPTIONS.includes(parsed.category) ? parsed.category : r.category,
-        simplicity: Array.isArray(parsed.simplicity) ? parsed.simplicity.filter((s) => SIMPLICITY_OPTIONS.some((o) => o.key === s)) : r.simplicity,
         ingredients: Array.isArray(parsed.ingredients)
           ? parsed.ingredients.map((i) => ({ id: uid(), name: i.name || "", amount: i.amount ?? "", unit: i.unit || "unit", category: i.category || "" }))
           : r.ingredients,
@@ -679,15 +661,6 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
                     </select>
                   </div>
                 )}
-              </div>
-
-              <div>
-                <SectionLabel>Simplicity</SectionLabel>
-                <div className="flex flex-wrap gap-1.5">
-                  {SIMPLICITY_OPTIONS.map((o) => (
-                    <Chip key={o.key} active={r.simplicity.includes(o.key)} onClick={() => toggleSimplicity(o.key)} color={C.forest}>{o.label}</Chip>
-                  ))}
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1724,30 +1697,21 @@ function SettingsTab({ settings, setSettings }) {
 
         <Card style={{ marginTop: 16 }}>
           <SectionLabel>Weekly day rules</SectionLabel>
-          <div className="text-xs italic mb-2" style={{ color: C.inkSoft }}>Leave both as "Any" for no rule. You can set category and simplicity together — e.g. dairy + under 20 min.</div>
+          <div className="text-xs italic mb-2" style={{ color: C.inkSoft }}>Leave as "Any" for no rule.</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
             {DAYS.map((d) => {
-              const rule = settings.weeklyDayRules[d] || { category: "", simplicity: "" };
+              const rule = settings.weeklyDayRules[d] || { category: "" };
               return (
                 <div key={d} className="rounded-lg p-2" style={{ background: C.paperDark }}>
                   <div className="text-xs font-semibold uppercase mb-1.5" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "0.05em" }}>{d.slice(0, 3)}</div>
                   <select
-                    className="w-full text-xs px-1 py-1 rounded mb-1"
+                    className="w-full text-xs px-1 py-1 rounded"
                     style={{ border: `1px solid ${C.line}` }}
                     value={rule.category}
                     onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, category: e.target.value } } })}
                   >
                     <option value="">Any category</option>
                     {CATEGORY_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                  <select
-                    className="w-full text-xs px-1 py-1 rounded"
-                    style={{ border: `1px solid ${C.line}` }}
-                    value={rule.simplicity}
-                    onChange={(e) => set({ weeklyDayRules: { ...settings.weeklyDayRules, [d]: { ...rule, simplicity: e.target.value } } })}
-                  >
-                    <option value="">Any simplicity</option>
-                    {SIMPLICITY_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
                 </div>
               );
@@ -1914,7 +1878,6 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
     const rule = settings.weeklyDayRules[dayName];
     if (!rule) return true;
     if (rule.category && recipe.category !== rule.category) return false;
-    if (rule.simplicity && !recipe.simplicity.includes(rule.simplicity)) return false;
     return true;
   };
 
@@ -2090,8 +2053,7 @@ function generatePlan({ selectedDays, recipes, settings, usageHistory, freezerSt
         }
       } else {
         const dRule = settings.weeklyDayRules[dayName];
-        const ruleBits = [dRule?.category, dRule?.simplicity].filter(Boolean).join(", ");
-        warnings.push(`No recipe available for "${component}" on ${dayName}${ruleBits ? ` (rule: ${ruleBits})` : ""}.`);
+        warnings.push(`No recipe available for "${component}" on ${dayName}${dRule?.category ? ` (rule: ${dRule.category})` : ""}.`);
       }
     }
 
@@ -3023,13 +2985,10 @@ export default function PlannerApp({ session, tier, isPaid, hasProAccess }) {
       DAYS.forEach((d) => {
         const old = (s.weeklyDayRules || {})[d];
         if (old && "mode" in old) {
-          // migrate legacy {mode, value} shape to independent category/simplicity fields
-          migratedRules[d] = {
-            category: old.mode === "category" ? old.value : "",
-            simplicity: old.mode === "simplicity" ? old.value : "",
-          };
+          // migrate legacy {mode, value} shape to a plain category field
+          migratedRules[d] = { category: old.mode === "category" ? old.value : "" };
         } else {
-          migratedRules[d] = old || { category: "", simplicity: "" };
+          migratedRules[d] = { category: old?.category || "" };
         }
       });
       // migrate: legacy shape was one flat {enabled,mode,components} object shared by every
