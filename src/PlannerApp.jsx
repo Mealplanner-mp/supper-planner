@@ -419,7 +419,7 @@ function RecipeIndexCard({ recipe, onEdit, onDelete, onDuplicate, onToggle, baby
             <button onClick={() => onToggle(recipe.id, "easy")} title="Easy">
               <Zap size={15} fill={recipe.easy ? C.forest : "none"} color={recipe.easy ? C.forest : C.inkSoft} />
             </button>
-            <button onClick={() => onToggle(recipe.id, "freezer")} title="Freezer meal">
+            <button onClick={() => onToggle(recipe.id, "freezer")} title="Bulk meal">
               <Snowflake size={15} color={recipe.freezer ? C.dustyBlue : C.inkSoft} />
             </button>
             {babyFriendlyEnabled && (
@@ -642,7 +642,7 @@ function RecipeEditor({ recipe, recipes, categoryMemory, ingredientCategories, b
                     <Zap size={16} fill={r.easy ? C.forest : "none"} color={r.easy ? C.forest : C.inkSoft} /> Easy
                   </button>
                   <button onClick={() => set({ freezer: !r.freezer })} className="flex items-center gap-1.5 text-sm">
-                    <Snowflake size={16} color={r.freezer ? C.dustyBlue : C.inkSoft} /> Freezer
+                    <Snowflake size={16} color={r.freezer ? C.dustyBlue : C.inkSoft} /> Bulk
                   </button>
                   {babyFriendlyEnabled && (
                     <button onClick={() => set({ babyFriendly: !r.babyFriendly })} className="flex items-center gap-1.5 text-sm">
@@ -1623,7 +1623,7 @@ function SettingsTab({ settings, setSettings }) {
         <strong style={{ color: C.forest }}>Generate</strong> on the Planner tab to see it take effect.
       </p>
 
-      <SettingsSection title="Supper" subtitle="Composition, repetition, freezer, baby-friendly, and per-day rules" icon={MEAL_TYPE_META.supper.icon} color={MEAL_TYPE_META.supper.color}>
+      <SettingsSection title="Supper" subtitle="Composition, repetition, bulk, baby-friendly, and per-day rules" icon={MEAL_TYPE_META.supper.icon} color={MEAL_TYPE_META.supper.color}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
           <Card>
             <SectionLabel>Days to plan</SectionLabel>
@@ -1663,9 +1663,9 @@ function SettingsTab({ settings, setSettings }) {
           </Card>
 
           <Card>
-            <SectionLabel>Freezer planning</SectionLabel>
+            <SectionLabel>Bulk planning</SectionLabel>
             <div className="text-xs mb-2" style={{ color: C.inkSoft }}>
-              Automatically schedules a freezer meal into the rotation on the day and frequency you set below.
+              Automatically schedules a bulk meal into the rotation on the day and frequency you set below.
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1681,7 +1681,7 @@ function SettingsTab({ settings, setSettings }) {
                 </select>
               </div>
               <div className="text-xs italic" style={{ color: C.inkSoft }}>
-                Whether a freezer meal's prep counts as part of that day's meal or a separate task is set per recipe, on the recipe card.
+                Whether a bulk meal's prep counts as part of that day's meal or a separate task is set per recipe, on the recipe card.
               </div>
             </div>
           </Card>
@@ -2248,7 +2248,7 @@ function MealTypeSection({ mealType, recipes, recipeIds, onAdd, onSwap, onRemove
 function MealSlotCard({ slot, recipe, onSwap, onRemove, onView }) {
   const accent = slot.isPrep && slot.component === "freezer-prep" ? C.dustyBlue : slot.isBaby ? C.plum : (TYPE_COLORS[slot.component] || C.forest);
   const label = slot.isPrep && slot.component === "freezer-prep"
-    ? "freezer prep"
+    ? "bulk prep"
     : slot.isBaby
     ? "baby friendly"
     : slot.coveredComponents && slot.coveredComponents.length > 1
